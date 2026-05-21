@@ -12,3 +12,5 @@ portfolio.json
 bot.log
 signals.json
 trades.json
+# Backtest output files (reproducible, not committed)
+backtest/results_*.csv
