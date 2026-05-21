@@ -1,0 +1,10 @@
+{
+  "holdings": {
+    "TICKER_A": {"shares": 0.0, "buy_price": 0.00, "trailing_stop": 0.00, "tp1_hit": false, "strategy": "A"},
+    "TICKER_B": {"shares": 0.0, "buy_price": 0.00, "trailing_stop": 0.00, "tp1_hit": false, "strategy": "B"},
+    "QQQM":     {"shares": 0.0, "buy_price": 0.00, "trailing_stop": 0.00, "auto_invest": 20.0, "tp1_hit": false, "strategy": "A"},
+    "TLT":      {"shares": 0.0, "buy_price": 0.00, "trailing_stop": 0.00, "tp1_hit": false, "strategy": "A"},
+    "TSLA":     {"shares": 0.0, "buy_price": 0.00, "trailing_stop": 0.00, "auto_invest": 0, "tp1_hit": false, "strategy": "A"}
+  },
+  "cash": 0
+}

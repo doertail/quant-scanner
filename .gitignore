@@ -1,0 +1,14 @@
+.env
+.worktrees/
+node_modules/
+.DS_Store
+venv/
+__pycache__/
+*.pyc
+scanner_v4.log
+run_scanner.sh
+portfolio.json
+.yf_cache/
+bot.log
+signals.json
+trades.json
