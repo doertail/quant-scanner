@@ -156,6 +156,52 @@ These are uncomfortable findings, but they're more useful published than hidden.
 
 ---
 
+---
+
+## 6. Macro Regime Filter Effect (`backtest_macro_regime_ablation.py`)
+
+**Question**: Does gating Strategy A entries on the 3-layer macro regime (BULL / SIDEWAYS / BEAR)
+improve outcomes? Are BULL signals actually better than BEAR signals?
+
+**Setup**: 30 S&P 500 large caps, 2018–2026 (8 years). Daily 3-layer regime computed from
+QQQ ADX(14) + 50-stock breadth proxy + VIX/realized-vol ratio. Strategy A signals grouped
+by the regime on their entry date.
+
+### Result — UNEXPECTED
+
+| Regime | Signals | Mean 5d | Win 5d | Mean 20d | Win 20d |
+|---|---|---|---|---|---|
+| BULL | 499 | +0.80% | 55.5% | +1.57% | 59.9% |
+| **SIDEWAYS** | 164 | **+2.07%** | **67.7%** | +3.15% | 64.0% |
+| **BEAR** | 180 | **+2.26%** | **65.6%** | **+4.01%** | 60.0% |
+| BULL vs others | — | **−1.38 pp** | **−10.7 pp** | **−2.03 pp** | — |
+
+### Interpretation (uncomfortable)
+
+**Strategy A signals perform *worse* in BULL regimes and *best* in BEAR regimes.**
+This is the opposite of what a naive "only trade in bull markets" rule would suggest.
+
+Why this makes sense in hindsight:
+- Mean-reversion strategies are fundamentally "buy fear when others are scared."
+- In BULL regimes, dips are shallow and brief — RSI rarely falls below 35 without
+  immediately bouncing on weak signal quality.
+- In BEAR/SIDEWAYS regimes, RSI<35 events are deeper and the snap-back is more violent.
+
+Implications:
+- **Using `macro-regime-3layer` to *block* Strategy A in non-BULL regimes is the
+  wrong application.** It would systematically remove the best signals.
+- The regime classifier is still useful, but as a **strategy router**, not a gate:
+  - BULL → favor momentum (Strategy B)
+  - SIDEWAYS / BEAR → favor mean-reversion (Strategy A)
+- The current scanner does the right thing for the wrong reason: it allows A in
+  SIDEWAYS and blocks B in non-BULL. The ablation confirms this directionally.
+
+**Bottom line**: The 3-layer regime classifier *is* a discriminating signal — but its
+correct use is strategy selection, not as a global "deploy long" gate. The
+`macro-regime-3layer` skill description has been updated to reflect this.
+
+---
+
 ## Caveats Common to All Backtests
 
 - **Survivorship bias**: ticker lists used today; delisted names absent.
