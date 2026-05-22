@@ -21,7 +21,7 @@ import yfinance as yf
 
 from notify import send_discord
 from risk_dashboard import (
-    UNKNOWN, grade_regime, grade_trend, grade_breadth, grade_credit,
+    grade_regime, grade_trend, grade_breadth, grade_credit,
     grade_vix, grade_yield_spread, grade_overall, diff_grades,
     normalize_yield,
 )
@@ -198,16 +198,16 @@ def main() -> None:
               f"— scanner_v4.py를 먼저 실행하세요")
         sys.exit(1)
     regime = signals.get("regime", {})
+    if not regime:
+        print("[error] signals.json에 regime 블록이 없습니다 — 6개 지표 중 4개의 "
+              "근거가 사라져 브리핑이 오해를 부릅니다. scanner_v4.py 재실행 필요.")
+        sys.exit(1)
     print(f"signals 로드: date={signals.get('date')} "
           f"regime={regime.get('market_regime')}")
 
     trend = fetch_trend()
     yield_spread = fetch_yield_spread()
     grades, details = build_dashboard(regime, trend, yield_spread)
-    if all(g == UNKNOWN for g in grades.values()):
-        print("[error] 모든 지표가 UNKNOWN — signals.json에 regime 블록이 "
-              "없습니다. 브리핑을 보내지 않습니다.")
-        sys.exit(1)
     overall = grade_overall(grades)
     prev = load_state()
     changes = diff_grades(prev.get("grades", {}), grades)
