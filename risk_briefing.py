@@ -92,6 +92,70 @@ def fetch_yield_spread() -> float | None:
         return None
 
 
+def build_dashboard(regime: dict, trend: tuple[float | None, float | None],
+                    yield_spread: float | None) -> tuple[dict, dict]:
+    """Return (grades, details): grades maps component key -> emoji, details
+    maps component key -> a short human-readable string.
+    """
+    qqq, ma200 = trend
+    grades: dict[str, str] = {}
+    details: dict[str, str] = {}
+
+    grades["regime"] = grade_regime(regime.get("market_regime"))
+    details["regime"] = str(regime.get("market_regime") or "데이터 없음")
+
+    grades["trend"] = grade_trend(qqq, ma200, EXT_THRESHOLD)
+    if qqq is not None and ma200 is not None and ma200 > 0:
+        details["trend"] = f"QQQ vs MA200 {(qqq / ma200 - 1) * 100:+.1f}%"
+    else:
+        details["trend"] = "데이터 없음"
+
+    breadth = regime.get("breadth_pct")
+    grades["breadth"] = grade_breadth(breadth)
+    details["breadth"] = f"{breadth:.0f}%" if breadth is not None else "데이터 없음"
+
+    hyg_ok = regime.get("hyg_ok")
+    grades["credit"] = grade_credit(hyg_ok)
+    if hyg_ok is None:
+        details["credit"] = "데이터 없음"
+    else:
+        details["credit"] = "HYG > MA50" if hyg_ok else "HYG < MA50"
+
+    vix_zone = regime.get("vix_zone")
+    grades["volatility"] = grade_vix(vix_zone)
+    vix = regime.get("vix")
+    if vix is not None and vix_zone:
+        details["volatility"] = f"VIX {vix} ({vix_zone})"
+    else:
+        details["volatility"] = str(vix_zone or "데이터 없음")
+
+    grades["yield_curve"] = grade_yield_spread(yield_spread, YIELD_FLAT_THRESHOLD)
+    if yield_spread is not None:
+        details["yield_curve"] = f"10y−3m {yield_spread:+.2f}%p"
+    else:
+        details["yield_curve"] = "데이터 없음"
+
+    return grades, details
+
+
+def load_state() -> dict:
+    """Load the previous briefing's grades, or {} if there is no prior run."""
+    if not STATE_PATH.exists():
+        return {}
+    try:
+        with open(STATE_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_state(grades: dict, overall: str) -> None:
+    """Persist this run's grades and overall grade for the next run's diff."""
+    with open(STATE_PATH, "w", encoding="utf-8") as f:
+        json.dump({"grades": grades, "overall": overall}, f,
+                  ensure_ascii=False, indent=2)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="시장 위험 브리핑")
     parser.add_argument("--signals", default=str(DEFAULT_SIGNALS),
@@ -105,9 +169,13 @@ def main() -> None:
     print(f"signals 로드: date={signals.get('date')} "
           f"regime={regime.get('market_regime')}")
 
-    qqq_close, qqq_ma200 = fetch_trend()
+    trend = fetch_trend()
     yield_spread = fetch_yield_spread()
-    print(f"QQQ={qqq_close} MA200={qqq_ma200} | yield spread={yield_spread}")
+    grades, details = build_dashboard(regime, trend, yield_spread)
+    overall = grade_overall(grades)
+    prev = load_state()
+    changes = diff_grades(prev.get("grades", {}), grades)
+    print(f"overall={overall} | grades={grades} | changes={changes}")
 
 
 if __name__ == "__main__":
