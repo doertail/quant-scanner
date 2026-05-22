@@ -74,8 +74,106 @@ def print_config() -> None:
     print()
 
 
+def _series_to_naive(s: pd.Series) -> pd.Series:
+    """Return a copy with a tz-naive DatetimeIndex for safe alignment."""
+    idx = s.index
+    if idx.tz is not None:
+        s = s.copy()
+        s.index = idx.tz_localize(None)
+    return s
+
+
+def fetch_ipo_closes() -> dict[str, pd.Series]:
+    """Download each IPO ticker; return {ticker: close Series}. Skips missing."""
+    tickers = [t for t, _, _, _, _ in IPO_UNIVERSE_SIZED]
+    raw = yf.download(
+        tickers, start=DATA_START, group_by="ticker",
+        auto_adjust=False, progress=False, threads=True,
+    )
+    out: dict[str, pd.Series] = {}
+    for ticker, _, _, _, _ in IPO_UNIVERSE_SIZED:
+        try:
+            close = raw[ticker]["Close"].dropna()
+        except (KeyError, TypeError):
+            print(f"  [warn] {ticker}: 데이터 없음 — 제외")
+            continue
+        if close.empty:
+            print(f"  [warn] {ticker}: 종가 없음 — 제외")
+            continue
+        out[ticker] = close
+    return out
+
+
+def fetch_market_closes() -> dict[str, pd.Series]:
+    """Download SPY and QQQ close Series indexed by date."""
+    out: dict[str, pd.Series] = {}
+    for sym in ("SPY", "QQQ"):
+        hist = yf.Ticker(sym).history(start=DATA_START, auto_adjust=False)
+        out[sym] = hist["Close"].dropna()
+    return out
+
+
+def compute_baseline(market: dict[str, pd.Series]) -> dict[str, dict[int, float]]:
+    """Unconditional mean forward return per symbol per horizon, over every
+    trading day in [BASELINE_START, BASELINE_END].
+    """
+    base: dict[str, dict[int, float]] = {}
+    lo, hi = pd.Timestamp(BASELINE_START), pd.Timestamp(BASELINE_END)
+    for sym in ("SPY", "QQQ"):
+        s = _series_to_naive(market[sym])
+        vals = s.tolist()
+        in_window = [i for i, d in enumerate(s.index) if lo <= d <= hi]
+        base[sym] = {}
+        for h in HORIZONS:
+            rets = [forward_return(vals, i, h) for i in in_window]
+            base[sym][h] = summarize(rets)["mean"]
+    return base
+
+
+def compute_events(ipo_closes: dict[str, pd.Series],
+                   market: dict[str, pd.Series]) -> list[dict]:
+    """One row per IPO event: size fields, cluster intensity, and SPY/QQQ
+    forward returns measured from the IPO day-0.
+    """
+    rows: list[dict] = []
+    naive_market = {sym: _series_to_naive(market[sym]) for sym in ("SPY", "QQQ")}
+    for idx, entry in enumerate(IPO_UNIVERSE_SIZED):
+        ticker, _, ai, deal_size_b, mktcap_b = entry
+        if ticker not in ipo_closes:
+            continue
+        day0 = _series_to_naive(ipo_closes[ticker]).index[0]
+        row = {
+            "ticker": ticker,
+            "ipo_date": day0.date().isoformat(),
+            "ai": ai,
+            "deal_size_b": deal_size_b,
+            "mktcap_b": mktcap_b,
+            "cluster_intensity": cluster_intensity(
+                IPO_UNIVERSE_SIZED, idx, CLUSTER_WINDOW_DAYS),
+        }
+        for sym in ("SPY", "QQQ"):
+            s = naive_market[sym]
+            vals = s.tolist()
+            i = s.index.get_indexer([day0], method="nearest")[0]
+            for h in HORIZONS:
+                row[f"{sym}_{h}d"] = forward_return(vals, i, h)
+        rows.append(row)
+    return rows
+
+
 def main() -> None:
     print_config()
+    print("[1/3] IPO 종목 데이터 다운로드...")
+    ipo_closes = fetch_ipo_closes()
+    print(f"  -> {len(ipo_closes)}개 종목 로드")
+    print("[2/3] 시장 데이터(SPY/QQQ) 다운로드...")
+    market = fetch_market_closes()
+    print(f"  -> SPY {len(market['SPY'])} bars, QQQ {len(market['QQQ'])} bars")
+    print("[3/3] 베이스라인 + 이벤트 계산...")
+    baseline = compute_baseline(market)
+    events = compute_events(ipo_closes, market)
+    print(f"  -> 이벤트 {len(events)}개 | "
+          f"베이스라인 SPY 252d {baseline['SPY'][252]*100:.2f}%")
 
 
 if __name__ == "__main__":
