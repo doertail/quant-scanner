@@ -48,8 +48,70 @@ def print_config() -> None:
     print()
 
 
+def _series_to_naive(s: pd.Series) -> pd.Series:
+    """Return a copy with a tz-naive DatetimeIndex for safe alignment."""
+    idx = s.index
+    if idx.tz is not None:
+        s = s.copy()
+        s.index = idx.tz_localize(None)
+    return s
+
+
+def fetch_market_closes() -> dict[str, pd.Series]:
+    """Download SPY and QQQ close Series indexed by date."""
+    out: dict[str, pd.Series] = {}
+    for sym in ("SPY", "QQQ"):
+        hist = yf.Ticker(sym).history(start=DATA_START, auto_adjust=False)
+        out[sym] = hist["Close"].dropna()
+    return out
+
+
+def compute_baseline(market: dict[str, pd.Series]) -> dict[str, dict[int, float]]:
+    """Unconditional mean forward return per symbol per horizon, over every
+    trading day in [BASELINE_START, BASELINE_END].
+    """
+    base: dict[str, dict[int, float]] = {}
+    lo, hi = pd.Timestamp(BASELINE_START), pd.Timestamp(BASELINE_END)
+    for sym in ("SPY", "QQQ"):
+        s = _series_to_naive(market[sym])
+        vals = s.tolist()
+        in_window = [i for i, d in enumerate(s.index) if lo <= d <= hi]
+        base[sym] = {}
+        for h in HORIZONS:
+            rets = [forward_return(vals, i, h) for i in in_window]
+            base[sym][h] = summarize(rets)["mean"]
+    return base
+
+
+def compute_years(market: dict[str, pd.Series]) -> list[dict]:
+    """One row per year: issuance fields and SPY/QQQ forward returns measured
+    from that year's start date.
+    """
+    rows: list[dict] = []
+    naive = {sym: _series_to_naive(market[sym]) for sym in ("SPY", "QQQ")}
+    for year, start, ipo_b, total_b in ANNUAL_ISSUANCE:
+        row = {"year": year, "ipo_proceeds_b": ipo_b, "total_issuance_b": total_b}
+        day0 = pd.Timestamp(start)
+        for sym in ("SPY", "QQQ"):
+            s = naive[sym]
+            vals = s.tolist()
+            i = s.index.get_indexer([day0], method="nearest")[0]
+            for h in HORIZONS:
+                row[f"{sym}_{h}d"] = forward_return(vals, i, h)
+        rows.append(row)
+    return rows
+
+
 def main() -> None:
     print_config()
+    print("[1/2] 시장 데이터(SPY/QQQ) 다운로드...")
+    market = fetch_market_closes()
+    print(f"  -> SPY {len(market['SPY'])} bars, QQQ {len(market['QQQ'])} bars")
+    print("[2/2] 베이스라인 + 연도 계산...")
+    baseline = compute_baseline(market)
+    years = compute_years(market)
+    print(f"  -> 연도 {len(years)}개 | "
+          f"베이스라인 SPY 252d {baseline['SPY'][252]*100:.2f}%")
 
 
 if __name__ == "__main__":
