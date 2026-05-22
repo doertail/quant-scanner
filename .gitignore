@@ -11,6 +11,7 @@ portfolio.json
 .yf_cache/
 bot.log
 signals.json
+briefing_state.json
 trades.json
 # Backtest output files (reproducible, not committed)
 backtest/results_*.csv
