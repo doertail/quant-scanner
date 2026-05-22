@@ -202,6 +202,80 @@ correct use is strategy selection, not as a global "deploy long" gate. The
 
 ---
 
+## 7. IPO Drift — Price Action After Large IPOs (`backtest_ipo_drift.py`)
+
+**Question**: After a large IPO, does the stock decline (Part A), and does the
+broad market (SPY/QQQ) weaken (Part B)? Is the effect stronger for mega-cap AI IPOs?
+
+**Setup**: 28 large IPOs from 2018–2025 hardcoded with their listing dates, 6 of
+them AI-related (SNOW, PLTR, C3.ai, ARM, Astera Labs, CoreWeave). Forward returns
+measured at 5/20/60/120/180/252 trading days. Part A enters the IPO stock at its
+day-0 close (absolute + SPY-excess). Part B measures SPY/QQQ forward returns from
+each IPO day-0 against an unconditional baseline (mean forward return over every
+trading day 2018–2025).
+
+### Result
+
+**Part A — IPO stock itself**
+
+| Group | Horizon | N | Mean abs | Win% | Mean excess vs SPY |
+|---|---|---|---|---|---|
+| 전체 | 5d | 28 | +8.06% | 67.9% | +8.34% |
+| 전체 | 20d | 28 | +7.69% | 67.9% | +6.83% |
+| 전체 | 60d | 28 | +27.06% | 64.3% | +21.69% |
+| 전체 | 120d | 28 | +6.60% | 46.4% | −2.57% |
+| 전체 | 180d | 28 | +20.37% | 53.6% | +7.31% |
+| 전체 | 252d | 28 | +20.21% | 53.6% | +7.38% |
+| AI | 5d | 6 | +7.37% | 66.7% | +9.85% |
+| AI | 20d | 6 | +11.03% | 66.7% | +11.77% |
+| AI | 60d | 6 | +89.74% | 83.3% | +83.12% |
+| AI | 120d | 6 | +65.81% | 50.0% | +51.62% |
+| AI | 180d | 6 | +63.82% | 66.7% | +42.55% |
+| AI | 252d | 6 | +57.57% | 83.3% | +34.31% |
+
+**Part B — market trend (SPY shown; QQQ figures noted in interpretation)**
+
+| Group | Horizon | N | SPY mean | SPY baseline | SPY diff |
+|---|---|---|---|---|---|
+| 전체 | 5d | 28 | −0.28% | +0.26% | −0.54% |
+| 전체 | 20d | 28 | +0.86% | +1.03% | −0.17% |
+| 전체 | 60d | 28 | +5.37% | +3.04% | +2.33% |
+| 전체 | 120d | 28 | +9.17% | +6.25% | +2.92% |
+| 전체 | 180d | 28 | +13.06% | +9.55% | +3.51% |
+| 전체 | 252d | 28 | +12.82% | +13.78% | −0.95% |
+| AI | 5d | 6 | −2.48% | +0.26% | −2.74% |
+| AI | 20d | 6 | −0.74% | +1.03% | −1.77% |
+| AI | 60d | 6 | +6.62% | +3.04% | +3.57% |
+| AI | 120d | 6 | +14.19% | +6.25% | +7.94% |
+| AI | 180d | 6 | +21.27% | +9.55% | +11.72% |
+| AI | 252d | 6 | +23.26% | +13.78% | +9.48% |
+
+**Interpretation**: Part A contradicts the hypothesis that large IPO stocks decline
+after listing — the full universe shows positive mean absolute returns at every
+horizon (win rates of 46–68%), with median returns turning negative only at 120d
+(−7.41%), suggesting the mean is pulled up by a handful of large winners. The AI
+subset is even more extreme: the 60d mean of +89.74% (driven by post-listing
+explosions in names like ARM and CoreWeave) vastly outperforms the broader group,
+although the 120d win rate drops to 50%, indicating high variance rather than
+consistent alpha.
+
+Part B also contradicts the "IPO day marks a market top" hypothesis at medium-to-long
+horizons — SPY diff is *positive* from 60d through 180d for both groups, meaning
+markets on average *outperformed* their baseline after large IPOs. The only support
+for weakness is at the very short end (5d SPY diff −0.54% for all; −2.74% for AI),
+but this is too small and variable to trade. QQQ shows the same pattern (5d diff
+−0.23% all-group, −2.93% AI; turning clearly positive from 60d onward).
+
+In sum: neither the individual IPO drift-down nor the market-weakness hypothesis
+is supported by this data over the 2018–2025 window.
+
+⚠️ **AI subset N=6** — confidence intervals are very wide; treat the AI rows as
+directional only, not conclusive. Forward windows of clustered IPOs (e.g. Sep–Dec
+2020) overlap, so observations are not independent — no p-values are reported.
+Survivorship bias: delisted large IPOs (WeWork, DIDI) are absent from the universe.
+
+---
+
 ## Caveats Common to All Backtests
 
 - **Survivorship bias**: ticker lists used today; delisted names absent.
