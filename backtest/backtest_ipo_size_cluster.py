@@ -199,6 +199,54 @@ def print_split(title: str, key: str, events: list[dict],
     print()
 
 
+def print_correlations(events: list[dict]) -> None:
+    """Pearson r of each size variable vs SPY and QQQ forward returns."""
+    print("[상관계수] 규모 변수 × forward 수익률 (Pearson r, 서술 통계)")
+    variables = (("deal_size", "deal_size_b"),
+                 ("mktcap", "mktcap_b"),
+                 ("cluster", "cluster_intensity"))
+    for sym in ("SPY", "QQQ"):
+        header = f"  {sym+' 변수':>16} | " + " | ".join(
+            f"{str(h)+'d':>6}" for h in HORIZONS)
+        print(header)
+        for label, key in variables:
+            cells = []
+            for h in HORIZONS:
+                r = pearson([e[key] for e in events],
+                            [e[f"{sym}_{h}d"] for e in events])
+                cells.append(f"{r:>+6.2f}" if r is not None else f"{'—':>6}")
+            print(f"  {label:>16} | " + " | ".join(cells))
+        print()
+    print("  (음수 r = 규모가 클수록 시장 forward 수익률이 낮음 → crowding-out 지지)")
+    print()
+
+
+def print_summary(events: list[dict],
+                  baseline: dict[str, dict[int, float]]) -> None:
+    """Report the base rate of the largest-market-cap quartile."""
+    by_mktcap = sorted(events, key=lambda e: e["mktcap_b"], reverse=True)
+    top_n = max(1, len(events) // 4)
+    top = by_mktcap[:top_n]
+    names = ", ".join(f"{e['ticker']}(${e['mktcap_b']:.0f}B)" for e in top)
+    print("[최대규모 요약]")
+    print(f"  시총 상위 {top_n}개(역대 최대규모 버킷): {names}")
+    for h in (60, 120, 252):
+        spy = summarize([e[f"SPY_{h}d"] for e in top])
+        qqq = summarize([e[f"QQQ_{h}d"] for e in top])
+        sd = _diff(spy["mean"], baseline["SPY"][h])
+        qd = _diff(qqq["mean"], baseline["QQQ"][h])
+        spy_s = f"{spy['mean']*100:+.2f}%" if spy["mean"] is not None else "—"
+        qqq_s = f"{qqq['mean']*100:+.2f}%" if qqq["mean"] is not None else "—"
+        sd_s = f"{sd*100:+.2f}pp" if sd is not None else "—"
+        qd_s = f"{qd*100:+.2f}pp" if qd is not None else "—"
+        print(f"    {h:>3}d: SPY {spy_s} (baseline 대비 {sd_s}) | "
+              f"QQQ {qqq_s} ({qd_s})")
+    print("  참고: Anthropic/OpenAI/SpaceX는 비상장이라 백테스트 대상이 아니다.")
+    print("  세 회사 모두 시총이 위 상위 버킷의 어떤 종목보다 크므로, 상위 버킷의")
+    print("  기저율이 가장 가까운 참고치다 — 종목별 예측이 아니라 base rate임에 유의.")
+    print()
+
+
 def main() -> None:
     print_config()
     print("[1/3] IPO 종목 데이터 다운로드...")
@@ -218,6 +266,8 @@ def main() -> None:
     print_split("시가총액(market cap $B)", "mktcap_b", events, baseline)
     print_split("클러스터 강도(±90일 조달액 합 $B)", "cluster_intensity",
                 events, baseline)
+    print_correlations(events)
+    print_summary(events, baseline)
 
 
 if __name__ == "__main__":
