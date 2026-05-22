@@ -167,6 +167,32 @@ def print_correlations(years: list[dict]) -> None:
     print()
 
 
+def print_summary(years: list[dict]) -> None:
+    """List the three highest-issuance years and the market that followed."""
+    top = sorted(years, key=lambda e: e["total_issuance_b"],
+                 reverse=True)[:3]
+    print("[2026 시나리오 요약]")
+    print("  역대 최고 발행 연도 3개 — 그 해 연초 진입 시 forward 시장:")
+    for r in top:
+        s252 = r["SPY_252d"]
+        q252 = r["QQQ_252d"]
+        s = f"{s252*100:+.2f}%" if s252 is not None else "—"
+        q = f"{q252*100:+.2f}%" if q252 is not None else "—"
+        print(f"    {r['year']}: 전체발행 ${r['total_issuance_b']:.0f}B → "
+              f"SPY 252d {s} | QQQ 252d {q}")
+    print("  Anthropic/OpenAI/SpaceX 동시 상장(2026)은 위 고발행 연도와 성격이")
+    print("  가깝다 — 단 N=8 서술 사례이고 발행은 내생적(시장이 뜨거울 때 발행)")
+    print("  이라, 예측이 아니라 정황 참고임에 유의.")
+    print()
+
+
+def save_csv(years: list[dict]) -> Path:
+    """Write per-year rows (issuance fields + forward returns) to CSV."""
+    out = Path(__file__).resolve().parent / "results_issuance_supply.csv"
+    pd.DataFrame(years).to_csv(out, index=False)
+    return out
+
+
 def main() -> None:
     print_config()
     print("[1/2] 시장 데이터(SPY/QQQ) 다운로드...")
@@ -182,6 +208,9 @@ def main() -> None:
     print_year_table(years)
     print_split(years, baseline)
     print_correlations(years)
+    print_summary(years)
+    out = save_csv(years)
+    print(f"CSV 저장: {out}")
 
 
 if __name__ == "__main__":
