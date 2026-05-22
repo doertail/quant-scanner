@@ -53,6 +53,45 @@ def load_signals(path: Path) -> dict:
         return json.load(f)
 
 
+def fetch_trend() -> tuple[float | None, float | None]:
+    """Return (QQQ latest close, QQQ 200-day MA), or (None, None) on failure."""
+    try:
+        hist = yf.Ticker("QQQ").history(period="400d", auto_adjust=False)
+        close = hist["Close"].dropna()
+        if len(close) < 200:
+            return None, None
+        return float(close.iloc[-1]), float(close.rolling(200).mean().iloc[-1])
+    except Exception as exc:
+        print(f"  [warn] QQQ 추세 데이터 실패: {exc}")
+        return None, None
+
+
+def _normalize_yield(value: float) -> float:
+    """Treasury yields are 0-20%. yfinance sometimes scales x10 (e.g. 4.2 -> 42);
+    any value above 25 is assumed x10-scaled and divided down.
+    """
+    return value / 10 if value > 25 else value
+
+
+def fetch_yield_spread() -> float | None:
+    """Return the 10y minus 3m Treasury spread in percentage points, or None.
+
+    Uses ^TNX (10-year) and ^IRX (13-week). Both are normalized so the spread is
+    in plain percentage points regardless of yfinance's scaling.
+    """
+    try:
+        tnx = yf.Ticker("^TNX").history(period="5d", auto_adjust=False)["Close"].dropna()
+        irx = yf.Ticker("^IRX").history(period="5d", auto_adjust=False)["Close"].dropna()
+        if tnx.empty or irx.empty:
+            return None
+        ten = _normalize_yield(float(tnx.iloc[-1]))
+        three = _normalize_yield(float(irx.iloc[-1]))
+        return ten - three
+    except Exception as exc:
+        print(f"  [warn] 수익률곡선 데이터 실패: {exc}")
+        return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="시장 위험 브리핑")
     parser.add_argument("--signals", default=str(DEFAULT_SIGNALS),
@@ -65,6 +104,10 @@ def main() -> None:
     regime = signals.get("regime", {})
     print(f"signals 로드: date={signals.get('date')} "
           f"regime={regime.get('market_regime')}")
+
+    qqq_close, qqq_ma200 = fetch_trend()
+    yield_spread = fetch_yield_spread()
+    print(f"QQQ={qqq_close} MA200={qqq_ma200} | yield spread={yield_spread}")
 
 
 if __name__ == "__main__":
