@@ -342,6 +342,69 @@ universe, and not backtested.
 
 ---
 
+## 9. Issuance Supply Shock — Market-Wide New Equity Supply (`backtest_issuance_supply.py`)
+
+**Question**: Sections 7–8 looked at individual IPOs. This zooms out: in years
+when *total* US new equity issuance is heavy, does the broad market (SPY/QQQ)
+deliver weaker forward returns — the "supply shock drains the market" idea behind
+a 2026 with Anthropic, OpenAI, and SpaceX all listing?
+
+**Setup**: Eight years (2018–2025), each hardcoded with an approximate US IPO
+proceeds figure and an approximate total-issuance figure (IPO + follow-on).
+Forward SPY/QQQ returns are measured from each year's start over 126 and 252
+trading days, compared against the unconditional 2018–2025 baseline. With only
+8 data points this is a **descriptive case study, not a statistical test**.
+
+### Result
+
+**Annual issuance vs forward return (highest total issuance first)**
+
+| Year | IPO $B | Total $B | SPY 252d |
+|---|---|---|---|
+| 2021 | 154 | 435 | +29.53% |
+| 2020 | 85 | 350 | +15.09% |
+| 2019 | 54 | 220 | +29.85% |
+| 2018 | 47 | 190 | −9.14% |
+| 2025 | 35 | 180 | +18.33% |
+| 2024 | 30 | 165 | +23.69% |
+| 2023 | 19 | 140 | +22.70% |
+| 2022 | 8 | 110 | −19.67% |
+
+**High vs low total-issuance half (4 years each) — SPY 252d**
+
+| Bucket | SPY mean | SPY diff vs baseline |
+|---|---|---|
+| HIGH | 16.33% | +2.56% |
+| LOW | 11.27% | −2.51% |
+
+**Correlation (Pearson r, N=8 — not significant, reference only)**:
+total issuance vs SPY 252d = +0.45; vs QQQ 252d = +0.42.
+
+**Interpretation**: The supply-shock hypothesis — that heavy issuance years drain
+market liquidity and produce weaker forward returns — is not supported by this
+data. In fact, the pattern runs in the opposite direction: the four highest-issuance
+years (2018–2021, led by 2021's $435B) averaged a SPY 252d return of +16.33%,
+while the four lowest-issuance years averaged only +11.27%, and the Pearson r
+between total issuance and SPY 252d is a positive +0.45. The most plausible
+explanation is endogeneity: firms and sponsors choose to issue into hot, rising
+markets, so high-issuance years cluster with strong market conditions because both
+share a common cause — an overheated market environment — rather than because
+issuance *causes* strength. The 252-day forward window measured from each year's
+start largely overlaps the issuance year itself, making this near-contemporaneous
+rather than predictive. With N=8 these observations cannot be treated as statistics.
+
+⚠️ **N=8 — not statistics.** No regression, p-values, or confidence intervals.
+Issuance figures are rounded public aggregates; total issuance (incl. follow-ons)
+is the rougher of the two. **Endogeneity**: firms issue into hot markets, so
+high-issuance years cluster with strong markets because issuance and a rising
+market share a cause — this backtest cannot separate "supply pressure" from "an
+overheated market." The 252-day forward window from each year's start largely
+overlaps the issuance year itself, so the measurement is near-contemporaneous,
+not predictive. Consecutive years' windows overlap. Anthropic, OpenAI, and SpaceX
+are private, not in the data, and not backtested.
+
+---
+
 ## Caveats Common to All Backtests
 
 - **Survivorship bias**: ticker lists used today; delisted names absent.
