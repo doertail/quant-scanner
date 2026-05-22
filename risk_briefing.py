@@ -108,7 +108,7 @@ def build_dashboard(regime: dict, trend: tuple[float | None, float | None],
 
     breadth = regime.get("breadth_pct")
     grades["breadth"] = grade_breadth(breadth)
-    details["breadth"] = f"{breadth:.0f}%" if breadth is not None else "데이터 없음"
+    details["breadth"] = f"{breadth:.1f}%" if breadth is not None else "데이터 없음"
 
     hyg_ok = regime.get("hyg_ok")
     grades["credit"] = grade_credit(hyg_ok)

@@ -1,5 +1,6 @@
 yfinance
 pandas
+lxml
 python-dotenv
 requests
 google-genai

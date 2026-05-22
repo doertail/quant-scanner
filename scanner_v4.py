@@ -84,6 +84,16 @@ log = logging.getLogger(__name__)
 
 # ─── 메인 ────────────────────────────────────────────────────────────────────
 
+def _run_risk_briefing() -> None:
+    """스캔 직후 위험 브리핑 실행 — Gemini 유무와 무관, 실패해도 스캔 결과는 보존."""
+    try:
+        from risk_briefing import run_briefing
+        print("\n📊 위험 브리핑 실행 중...")
+        run_briefing()
+    except Exception as e:
+        log.warning(f"위험 브리핑 실패(스캔은 정상 완료): {e}")
+
+
 def main() -> None:
     today = datetime.today().strftime('%Y-%m-%d')
     tomorrow = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')  # yfinance end는 exclusive
@@ -845,6 +855,7 @@ def main() -> None:
     if not api_key:
         log.warning("GEMINI_API_KEY 미설정 — AI 분석 스킵")
         send_discord(scan_text)
+        _run_risk_briefing()
         return
 
     print(f"\n{'='*70}")
@@ -1078,12 +1089,7 @@ Google Search로 지금 시장에서 돈이 어디로 이동 중인지 검색해
     send_discord(discord_msg)
 
     # 위험 브리핑 — 스캔 직후 자동 실행 (signals.json을 읽어 6지표 대시보드 발송)
-    try:
-        from risk_briefing import run_briefing
-        print("\n📊 위험 브리핑 실행 중...")
-        run_briefing()
-    except Exception as e:
-        log.warning(f"위험 브리핑 실패(스캔은 정상 완료): {e}")
+    _run_risk_briefing()
 
 
 if __name__ == '__main__':
