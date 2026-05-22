@@ -276,6 +276,66 @@ Survivorship bias: delisted large IPOs (WeWork, DIDI) are absent from the univer
 
 ---
 
+## 8. IPO Size & Clustering — Crowding-Out Test (`backtest_ipo_size_cluster.py`)
+
+**Question**: Section 7 showed the market does not weaken after a large IPO on
+average. This goes further: do *larger* IPOs (by deal size or market cap), or
+*clustered* IPO waves, correlate with weaker SPY/QQQ forward returns — the
+"crowding-out" idea that funding IPOs drains other stocks?
+
+**Setup**: The 28-IPO universe from section 7, each hardcoded with an approximate
+deal size and IPO-day market cap. Cluster intensity = sum of universe deal sizes
+within ±90 days of each event. Events are median-split into HIGH/LOW buckets
+(14 each) on each of the three variables; SPY/QQQ forward returns at
+5/20/60/120/180/252 trading days are compared against the unconditional
+2018–2025 baseline.
+
+### Result
+
+**Median-split — HIGH bucket "SPY weaker than LOW" horizon count (out of 6)**
+
+| Variable | HIGH-weaker horizons |
+|---|---|
+| Deal size | 2/6 |
+| Market cap | 2/6 |
+| Cluster intensity | 1/6 |
+
+**Correlation (Pearson r, SPY forward returns)**
+
+| Variable | 5d | 20d | 60d | 120d | 180d | 252d |
+|---|---|---|---|---|---|---|
+| Deal size | +0.17 | −0.07 | −0.24 | −0.15 | −0.08 | −0.20 |
+| Market cap | −0.06 | +0.11 | −0.30 | +0.04 | +0.12 | +0.06 |
+| Cluster | +0.43 | +0.44 | +0.16 | +0.17 | +0.13 | −0.01 |
+
+**Largest market-cap quartile (top 7)** — SPY return vs baseline:
+- 60d: SPY +3.49% (baseline 대비 +0.45pp)
+- 120d: SPY +8.71% (baseline 대비 +2.46pp)
+- 252d: SPY +15.09% (baseline 대비 +1.31pp)
+
+**Interpretation**: The crowding-out hypothesis — that larger IPOs or denser IPO
+waves drain capital from existing stocks and weaken forward market returns — is not
+supported by this data. HIGH-bucket events (large deal size, large market cap, or
+high cluster intensity) produced SPY returns that were *weaker* than LOW-bucket
+events in only 1–2 out of 6 horizons, far from the consistent 6/6 pattern the
+hypothesis would require. Pearson correlations are similarly mixed: deal size shows
+weak negative correlations at 60d and 252d (r = −0.24, −0.20), while market cap and
+cluster intensity show near-zero or even positive correlations across most horizons.
+The largest-cap quartile (ABNB, SNOW, UBER, RIVN, ARM, DASH, COIN) produced SPY
+returns *above* the unconditional baseline at all three medium-to-long horizons.
+In short, the data contradicts the crowding-out narrative for this universe and time
+window — if anything, very large IPOs coincided with modestly stronger market
+conditions, consistent with the section 7 finding that IPO days are not market tops.
+
+⚠️ **Approximate size figures** — deal size and market cap are rounded public
+estimates; the four direct listings (SPOT, COIN, PLTR, RBLX) raised no primary
+proceeds, so their deal size is a first-day float-value proxy. Median split gives
+N=14 per bucket — wide confidence intervals. Overlapping forward windows mean
+observations are not independent, so no p-values are reported. Anthropic, OpenAI,
+and SpaceX are private, not in the universe, and not backtested.
+
+---
+
 ## Caveats Common to All Backtests
 
 - **Survivorship bias**: ticker lists used today; delisted names absent.
