@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import yfinance as yf
 
@@ -156,9 +155,10 @@ def print_part_a(rows: list[dict]) -> None:
                 print(f"  {h:>6}d  | {0:>3} | {'—':>9} | {'—':>10} | "
                       f"{'—':>6} | {'—':>15}")
                 continue
+            exc = (f"{e['mean']*100:>14.2f}%" if e["mean"] is not None
+                   else f"{'—':>15}")
             print(f"  {h:>6}d  | {a['n']:>3} | {a['mean']*100:>8.2f}% | "
-                  f"{a['median']*100:>9.2f}% | {a['win_rate']*100:>5.1f}% | "
-                  f"{(e['mean']*100 if e['mean'] is not None else 0):>14.2f}%")
+                  f"{a['median']*100:>9.2f}% | {a['win_rate']*100:>5.1f}% | {exc}")
         print()
 
 
@@ -205,8 +205,9 @@ def print_part_b(rows: list[dict], baseline: dict[str, dict[int, float]]) -> Non
     for label, subset in (("전체 IPO 이벤트", rows),
                           ("AI IPO 이벤트", [r for r in rows if r["ai"]])):
         print(f"  그룹: {label} (이벤트 {len(subset)}개)")
-        print(f"  {'Horizon':>8} | {'N':>3} | {'SPY mean':>9} | {'SPY base':>9} | "
-              f"{'SPY diff':>9} | {'QQQ mean':>9} | {'QQQ base':>9} | {'QQQ diff':>9}")
+        print(f"  {'Horizon':>8} | {'N':>3} | "
+              f"{'SPY mean':>9} | {'SPY win%':>9} | {'SPY base':>9} | {'SPY diff':>9} | "
+              f"{'QQQ mean':>9} | {'QQQ win%':>9} | {'QQQ base':>9} | {'QQQ diff':>9}")
         for h in HORIZONS:
             cells = [f"  {h:>6}d "]
             n_shown = False
@@ -217,10 +218,11 @@ def print_part_b(rows: list[dict], baseline: dict[str, dict[int, float]]) -> Non
                     cells.append(f"| {stat['n']:>3} ")
                     n_shown = True
                 if stat["n"] == 0 or base is None:
-                    cells.append(f"| {'—':>9} | {'—':>9} | {'—':>9} ")
+                    cells.append(f"| {'—':>9} | {'—':>9} | {'—':>9} | {'—':>9} ")
                 else:
                     diff = stat["mean"] - base
                     cells.append(f"| {stat['mean']*100:>8.2f}% | "
+                                 f"{stat['win_rate']*100:>8.1f}% | "
                                  f"{base*100:>8.2f}% | {diff*100:>+8.2f}% ")
             print("".join(cells))
         print()

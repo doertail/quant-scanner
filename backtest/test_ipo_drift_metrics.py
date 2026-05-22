@@ -15,6 +15,10 @@ def test_forward_return_out_of_range():
     assert forward_return(closes, 1, 1) is None
 
 
+def test_forward_return_negative_idx():
+    assert forward_return([100.0, 110.0], -1, 1) is None
+
+
 def test_forward_return_zero_entry():
     assert forward_return([0.0, 50.0], 0, 1) is None
 
