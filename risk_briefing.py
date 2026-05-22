@@ -183,25 +183,18 @@ def format_briefing(date: str, overall: str, grades: dict, details: dict,
     return "\n".join(lines)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="시장 위험 브리핑")
-    parser.add_argument("--signals", default=str(DEFAULT_SIGNALS),
-                        help="signals.json 경로")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Discord 발송 대신 stdout 출력 (state를 바꾸지 않음)")
-    args = parser.parse_args()
+def run_briefing(signals_path: Path = DEFAULT_SIGNALS,
+                 dry_run: bool = False) -> None:
+    """Grade the risk dashboard from signals.json and send/print the briefing.
 
-    try:
-        signals = load_signals(Path(args.signals))
-    except FileNotFoundError:
-        print(f"[error] signals 파일 없음: {args.signals} "
-              f"— scanner_v4.py를 먼저 실행하세요")
-        sys.exit(1)
+    Raises FileNotFoundError if `signals_path` is missing, or ValueError if the
+    file has no regime block. The CLI entry point (`main`) turns these into exit
+    codes; in-process callers such as scanner_v4 should wrap this in try/except.
+    """
+    signals = load_signals(signals_path)
     regime = signals.get("regime", {})
     if not regime:
-        print("[error] signals.json에 regime 블록이 없습니다 — 6개 지표 중 4개의 "
-              "근거가 사라져 브리핑이 오해를 부릅니다. scanner_v4.py 재실행 필요.")
-        sys.exit(1)
+        raise ValueError("signals.json에 regime 블록이 없습니다")
     print(f"signals 로드: date={signals.get('date')} "
           f"regime={regime.get('market_regime')}")
 
@@ -216,7 +209,7 @@ def main() -> None:
         changes, has_prev=bool(prev),
     )
 
-    if args.dry_run:
+    if dry_run:
         print(message)
         print("\n(미리보기 — Discord 미발송, state 미변경)")
         return
@@ -228,6 +221,26 @@ def main() -> None:
         send_discord(message)
         print("Discord 발송 완료")
     save_state(grades, overall)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="시장 위험 브리핑")
+    parser.add_argument("--signals", default=str(DEFAULT_SIGNALS),
+                        help="signals.json 경로")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Discord 발송 대신 stdout 출력 (state를 바꾸지 않음)")
+    args = parser.parse_args()
+
+    try:
+        run_briefing(Path(args.signals), args.dry_run)
+    except FileNotFoundError:
+        print(f"[error] signals 파일 없음: {args.signals} "
+              f"— scanner_v4.py를 먼저 실행하세요")
+        sys.exit(1)
+    except ValueError as exc:
+        print(f"[error] {exc} — 6개 지표 중 4개의 근거가 사라져 브리핑이 "
+              f"오해를 부릅니다. scanner_v4.py 재실행 필요.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

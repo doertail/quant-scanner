@@ -1077,6 +1077,14 @@ Google Search로 지금 시장에서 돈이 어디로 이동 중인지 검색해
     print("\n📨 Discord 전송 중...")
     send_discord(discord_msg)
 
+    # 위험 브리핑 — 스캔 직후 자동 실행 (signals.json을 읽어 6지표 대시보드 발송)
+    try:
+        from risk_briefing import run_briefing
+        print("\n📊 위험 브리핑 실행 중...")
+        run_briefing()
+    except Exception as e:
+        log.warning(f"위험 브리핑 실패(스캔은 정상 완료): {e}")
+
 
 if __name__ == '__main__':
     main()
