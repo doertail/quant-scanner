@@ -102,6 +102,23 @@ def compute_years(market: dict[str, pd.Series]) -> list[dict]:
     return rows
 
 
+def print_year_table(years: list[dict]) -> None:
+    """Print each year's issuance and SPY/QQQ forward returns, highest
+    total issuance first.
+    """
+    print("[연도별 발행액 × forward 시장 수익률]  (total_issuance 내림차순)")
+    print(f"  {'Year':>5} | {'IPO $B':>7} | {'Total $B':>8} | "
+          f"{'SPY 126d':>9} | {'SPY 252d':>9} | {'QQQ 126d':>9} | {'QQQ 252d':>9}")
+    for r in sorted(years, key=lambda e: e["total_issuance_b"], reverse=True):
+        def fmt(key: str) -> str:
+            v = r[key]
+            return f"{v*100:>8.2f}%" if v is not None else f"{'—':>9}"
+        print(f"  {r['year']:>5} | {r['ipo_proceeds_b']:>7.0f} | "
+              f"{r['total_issuance_b']:>8.0f} | {fmt('SPY_126d')} | "
+              f"{fmt('SPY_252d')} | {fmt('QQQ_126d')} | {fmt('QQQ_252d')}")
+    print()
+
+
 def main() -> None:
     print_config()
     print("[1/2] 시장 데이터(SPY/QQQ) 다운로드...")
@@ -112,6 +129,9 @@ def main() -> None:
     years = compute_years(market)
     print(f"  -> 연도 {len(years)}개 | "
           f"베이스라인 SPY 252d {baseline['SPY'][252]*100:.2f}%")
+
+    print()
+    print_year_table(years)
 
 
 if __name__ == "__main__":
