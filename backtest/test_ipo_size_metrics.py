@@ -50,6 +50,8 @@ def test_pearson_perfect_negative():
 def test_pearson_drops_none_pairs():
     # None pairs dropped; remaining (1,2),(3,6) are perfectly correlated
     assert abs(pearson([1, None, 3], [2, 9, 6]) - 1.0) < 1e-9
+    # None on the ys side takes the same path: remaining (2,4),(3,6)
+    assert abs(pearson([1, 2, 3], [None, 4, 6]) - 1.0) < 1e-9
 
 
 def test_pearson_too_few_pairs():

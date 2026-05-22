@@ -320,7 +320,9 @@ high cluster intensity) produced SPY returns that were *weaker* than LOW-bucket
 events in only 1–2 out of 6 horizons, far from the consistent 6/6 pattern the
 hypothesis would require. Pearson correlations are similarly mixed: deal size shows
 weak negative correlations at 60d and 252d (r = −0.24, −0.20), while market cap and
-cluster intensity show near-zero or even positive correlations across most horizons.
+cluster intensity show near-zero or even positive correlations across most horizons
+(the one exception is market cap at 60d, r = −0.30 — the largest single correlation
+in the table, but isolated to that horizon).
 The largest-cap quartile (ABNB, SNOW, UBER, RIVN, ARM, DASH, COIN) produced SPY
 returns *above* the unconditional baseline at all three medium-to-long horizons.
 In short, the data contradicts the crowding-out narrative for this universe and time
@@ -330,9 +332,13 @@ conditions, consistent with the section 7 finding that IPO days are not market t
 ⚠️ **Approximate size figures** — deal size and market cap are rounded public
 estimates; the four direct listings (SPOT, COIN, PLTR, RBLX) raised no primary
 proceeds, so their deal size is a first-day float-value proxy. Median split gives
-N=14 per bucket — wide confidence intervals. Overlapping forward windows mean
-observations are not independent, so no p-values are reported. Anthropic, OpenAI,
-and SpaceX are private, not in the universe, and not backtested.
+N=14 per bucket — wide confidence intervals. The cluster-intensity split has a
+5-way tie at the median (LYFT, UBER, PINS, ZM, CRWD all = 13.2, the 2019 IPO wave);
+two go to LOW and three to HIGH by universe insertion order, so the cluster HIGH/LOW
+comparison partly separates members of the same wave — read the cluster row with
+that in mind. Overlapping forward windows mean observations are not independent, so
+no p-values are reported. Anthropic, OpenAI, and SpaceX are private, not in the
+universe, and not backtested.
 
 ---
 
