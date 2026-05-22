@@ -162,6 +162,72 @@ def print_part_a(rows: list[dict]) -> None:
         print()
 
 
+def compute_baseline(market: dict[str, pd.Series]) -> dict[str, dict[int, float]]:
+    """Unconditional mean forward return per symbol per horizon.
+
+    Entry on every trading day in [BASELINE_START, BASELINE_END].
+    """
+    base: dict[str, dict[int, float]] = {}
+    lo, hi = pd.Timestamp(BASELINE_START), pd.Timestamp(BASELINE_END)
+    for sym in ("SPY", "QQQ"):
+        s = _series_to_naive(market[sym])
+        vals = s.tolist()
+        in_window = [i for i, d in enumerate(s.index) if lo <= d <= hi]
+        base[sym] = {}
+        for h in HORIZONS:
+            rets = [forward_return(vals, i, h) for i in in_window]
+            base[sym][h] = summarize(rets)["mean"]
+    return base
+
+
+def compute_part_b(ipo_closes: dict[str, pd.Series],
+                   market: dict[str, pd.Series]) -> list[dict]:
+    """One row per IPO event: SPY/QQQ forward returns from the IPO day-0."""
+    rows: list[dict] = []
+    naive_market = {sym: _series_to_naive(market[sym]) for sym in ("SPY", "QQQ")}
+    for ticker, _, ai in IPO_UNIVERSE:
+        if ticker not in ipo_closes:
+            continue
+        day0 = _series_to_naive(ipo_closes[ticker]).index[0]
+        row = {"ticker": ticker, "ipo_date": day0.date().isoformat(), "ai": ai}
+        for sym in ("SPY", "QQQ"):
+            s = naive_market[sym]
+            vals = s.tolist()
+            idx = s.index.get_indexer([day0], method="nearest")[0]
+            for h in HORIZONS:
+                row[f"{sym}_{h}d"] = forward_return(vals, idx, h)
+        rows.append(row)
+    return rows
+
+
+def print_part_b(rows: list[dict], baseline: dict[str, dict[int, float]]) -> None:
+    print("[Part B] 시장 추세 — IPO day-0 이후 SPY/QQQ")
+    for label, subset in (("전체 IPO 이벤트", rows),
+                          ("AI IPO 이벤트", [r for r in rows if r["ai"]])):
+        print(f"  그룹: {label} (이벤트 {len(subset)}개)")
+        print(f"  {'Horizon':>8} | {'N':>3} | {'SPY mean':>9} | {'SPY base':>9} | "
+              f"{'SPY diff':>9} | {'QQQ mean':>9} | {'QQQ base':>9} | {'QQQ diff':>9}")
+        for h in HORIZONS:
+            cells = [f"  {h:>6}d "]
+            n_shown = False
+            for sym in ("SPY", "QQQ"):
+                stat = summarize([r[f"{sym}_{h}d"] for r in subset])
+                base = baseline[sym][h]
+                if not n_shown:
+                    cells.append(f"| {stat['n']:>3} ")
+                    n_shown = True
+                if stat["n"] == 0 or base is None:
+                    cells.append(f"| {'—':>9} | {'—':>9} | {'—':>9} ")
+                else:
+                    diff = stat["mean"] - base
+                    cells.append(f"| {stat['mean']*100:>8.2f}% | "
+                                 f"{base*100:>8.2f}% | {diff*100:>+8.2f}% ")
+            print("".join(cells))
+        print()
+    print("해석: SPY/QQQ diff가 음수면 'IPO 직후 시장이 베이스라인보다 약함' → 가설 지지")
+    print()
+
+
 def main() -> None:
     print_config()
     print("[1/?] IPO 종목 데이터 다운로드...")
@@ -172,6 +238,11 @@ def main() -> None:
     print(f"  -> SPY {len(market['SPY'])} bars, QQQ {len(market['QQQ'])} bars")
     part_a = compute_part_a(ipo_closes, market)
     print_part_a(part_a)
+    print("[3/3] 베이스라인 계산...")
+    baseline = compute_baseline(market)
+    part_b = compute_part_b(ipo_closes, market)
+    print()
+    print_part_b(part_b, baseline)
 
 
 if __name__ == "__main__":
