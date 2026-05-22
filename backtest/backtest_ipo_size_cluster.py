@@ -247,6 +247,13 @@ def print_summary(events: list[dict],
     print()
 
 
+def save_csv(events: list[dict]) -> Path:
+    """Write per-event rows (size fields + forward returns) to CSV."""
+    out = Path(__file__).resolve().parent / "results_ipo_size_cluster.csv"
+    pd.DataFrame(events).to_csv(out, index=False)
+    return out
+
+
 def main() -> None:
     print_config()
     print("[1/3] IPO 종목 데이터 다운로드...")
@@ -268,6 +275,9 @@ def main() -> None:
                 events, baseline)
     print_correlations(events)
     print_summary(events, baseline)
+
+    out = save_csv(events)
+    print(f"CSV 저장: {out}")
 
 
 if __name__ == "__main__":
