@@ -67,8 +67,54 @@ def print_config() -> None:
     print()
 
 
+def fetch_ipo_closes() -> dict[str, pd.Series]:
+    """Download each IPO ticker; return {ticker: close Series} indexed by date.
+
+    Skips tickers with no data. Warns if yfinance first bar differs from the
+    hardcoded ipo_date by more than 5 calendar days.
+    """
+    tickers = [t for t, _, _ in IPO_UNIVERSE]
+    raw = yf.download(
+        tickers, start=DATA_START, group_by="ticker",
+        auto_adjust=False, progress=False, threads=True,
+    )
+    out: dict[str, pd.Series] = {}
+    for ticker, ipo_date, _ in IPO_UNIVERSE:
+        try:
+            close = raw[ticker]["Close"].dropna()
+        except (KeyError, TypeError):
+            print(f"  [warn] {ticker}: 데이터 없음 — 제외")
+            continue
+        if close.empty:
+            print(f"  [warn] {ticker}: 종가 없음 — 제외")
+            continue
+        first = close.index[0]
+        first_naive = first.tz_localize(None) if first.tzinfo else first
+        gap = abs((first_naive - pd.Timestamp(ipo_date)).days)
+        if gap > 5:
+            print(f"  [warn] {ticker}: 첫 거래일 {first_naive.date()} vs "
+                  f"하드코딩 {ipo_date} ({gap}일 차이)")
+        out[ticker] = close
+    return out
+
+
+def fetch_market_closes() -> dict[str, pd.Series]:
+    """Download SPY and QQQ close Series indexed by date."""
+    out: dict[str, pd.Series] = {}
+    for sym in ("SPY", "QQQ"):
+        hist = yf.Ticker(sym).history(start=DATA_START, auto_adjust=False)
+        out[sym] = hist["Close"].dropna()
+    return out
+
+
 def main() -> None:
     print_config()
+    print("[1/?] IPO 종목 데이터 다운로드...")
+    ipo_closes = fetch_ipo_closes()
+    print(f"  -> {len(ipo_closes)}개 종목 로드")
+    print("[2/?] 시장 데이터(SPY/QQQ) 다운로드...")
+    market = fetch_market_closes()
+    print(f"  -> SPY {len(market['SPY'])} bars, QQQ {len(market['QQQ'])} bars")
 
 
 if __name__ == "__main__":
