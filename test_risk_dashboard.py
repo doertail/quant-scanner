@@ -2,7 +2,7 @@
 from risk_dashboard import (
     GREEN, YELLOW, RED, UNKNOWN,
     grade_regime, grade_trend, grade_breadth, grade_credit, grade_vix,
-    grade_yield_spread, grade_overall, diff_grades,
+    grade_yield_spread, grade_overall, diff_grades, normalize_yield,
 )
 
 
@@ -53,6 +53,7 @@ def test_grade_yield_spread():
     assert grade_yield_spread(0.0, 0.5) == YELLOW     # 0 is flat, not inverted
     assert grade_yield_spread(-0.4, 0.5) == RED       # inverted
     assert grade_yield_spread(None, 0.5) == UNKNOWN
+    assert grade_yield_spread(0.5, 0.5) == GREEN     # at threshold = normal
 
 
 def test_grade_overall():
@@ -66,6 +67,14 @@ def test_grade_overall():
     assert grade_overall({"a": RED, "b": RED, "c": GREEN}) == "HIGH"
     # UNKNOWN is ignored
     assert grade_overall({"a": GREEN, "b": UNKNOWN}) == "LOW"
+    # all-UNKNOWN → LOW (documented design: UNKNOWN is ignored)
+    assert grade_overall({"a": UNKNOWN, "b": UNKNOWN}) == "LOW"
+
+
+def test_normalize_yield():
+    assert normalize_yield(4.5) == 4.5      # normal scale, untouched
+    assert normalize_yield(45.0) == 4.5     # x10 scale, divided down
+    assert normalize_yield(25.0) == 2.5     # boundary: >=25 is divided
 
 
 def test_diff_grades():

@@ -13,14 +13,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 
 import yfinance as yf
 
 from notify import send_discord
 from risk_dashboard import (
-    grade_regime, grade_trend, grade_breadth, grade_credit, grade_vix,
-    grade_yield_spread, grade_overall, diff_grades,
+    UNKNOWN, grade_regime, grade_trend, grade_breadth, grade_credit,
+    grade_vix, grade_yield_spread, grade_overall, diff_grades,
+    normalize_yield,
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -66,13 +69,6 @@ def fetch_trend() -> tuple[float | None, float | None]:
         return None, None
 
 
-def _normalize_yield(value: float) -> float:
-    """Treasury yields are 0-20%. yfinance sometimes scales x10 (e.g. 4.2 -> 42);
-    any value above 25 is assumed x10-scaled and divided down.
-    """
-    return value / 10 if value > 25 else value
-
-
 def fetch_yield_spread() -> float | None:
     """Return the 10y minus 3m Treasury spread in percentage points, or None.
 
@@ -84,8 +80,8 @@ def fetch_yield_spread() -> float | None:
         irx = yf.Ticker("^IRX").history(period="5d", auto_adjust=False)["Close"].dropna()
         if tnx.empty or irx.empty:
             return None
-        ten = _normalize_yield(float(tnx.iloc[-1]))
-        three = _normalize_yield(float(irx.iloc[-1]))
+        ten = normalize_yield(float(tnx.iloc[-1]))
+        three = normalize_yield(float(irx.iloc[-1]))
         return ten - three
     except Exception as exc:
         print(f"  [warn] 수익률곡선 데이터 실패: {exc}")
@@ -192,10 +188,15 @@ def main() -> None:
     parser.add_argument("--signals", default=str(DEFAULT_SIGNALS),
                         help="signals.json 경로")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Discord 발송 대신 stdout 출력")
+                        help="Discord 발송 대신 stdout 출력 (state를 바꾸지 않음)")
     args = parser.parse_args()
 
-    signals = load_signals(Path(args.signals))
+    try:
+        signals = load_signals(Path(args.signals))
+    except FileNotFoundError:
+        print(f"[error] signals 파일 없음: {args.signals} "
+              f"— scanner_v4.py를 먼저 실행하세요")
+        sys.exit(1)
     regime = signals.get("regime", {})
     print(f"signals 로드: date={signals.get('date')} "
           f"regime={regime.get('market_regime')}")
@@ -203,6 +204,10 @@ def main() -> None:
     trend = fetch_trend()
     yield_spread = fetch_yield_spread()
     grades, details = build_dashboard(regime, trend, yield_spread)
+    if all(g == UNKNOWN for g in grades.values()):
+        print("[error] 모든 지표가 UNKNOWN — signals.json에 regime 블록이 "
+              "없습니다. 브리핑을 보내지 않습니다.")
+        sys.exit(1)
     overall = grade_overall(grades)
     prev = load_state()
     changes = diff_grades(prev.get("grades", {}), grades)
@@ -210,8 +215,15 @@ def main() -> None:
         str(signals.get("date", "?")), overall, grades, details,
         changes, has_prev=bool(prev),
     )
+
     if args.dry_run:
         print(message)
+        print("\n(미리보기 — Discord 미발송, state 미변경)")
+        return
+
+    webhook = os.getenv("DISCORD_WEBHOOK_URL", "")
+    if not webhook:
+        print("[warn] DISCORD_WEBHOOK_URL 미설정 — 발송 건너뜀")
     else:
         send_discord(message)
         print("Discord 발송 완료")

@@ -82,3 +82,10 @@ def diff_grades(prev: dict[str, str],
         if name in prev and prev[name] != g:
             out.append((name, prev[name], g))
     return out
+
+
+def normalize_yield(value: float) -> float:
+    """Treasury yields are 0-20%. yfinance sometimes scales x10 (e.g. 4.2 -> 42);
+    any value at or above 25 is assumed x10-scaled and divided down.
+    """
+    return value / 10 if value >= 25 else value
