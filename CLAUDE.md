@@ -22,6 +22,7 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `scanner_v4.py` | 메인 스캐너 — Phase1(유니버스 스캔) + Phase2(포트폴리오 모니터), Discord 웹훅 알림 |
 | `execution_layer.py` | Alpaca Paper API 주문 실행 — scanner_v4.py 실행 후 연속 실행, 킬스위치/일일손실한도/포지션캡 안전장치 포함 |
 | `bot.py` | Discord Trade Bot — `!buy`, `!sell`, `!port`, `!summary`, `!cash`, `!stop` 명령어로 수동 매매 기록 |
+| `risk_briefing.py` | 위험 등급 브리핑 — signals.json + 수익률곡선으로 6개 지표 대시보드 채점 후 Discord 발송 |
 
 ### 모듈
 | 파일 | 역할 |
@@ -53,6 +54,10 @@ python scanner_v4.py
 
 # Alpaca 주문 실행 (스캔 직후)
 python execution_layer.py
+
+# 위험 브리핑 (스캔 직후, signals.json 평가)
+python risk_briefing.py            # Discord 발송
+python risk_briefing.py --dry-run  # 발송 없이 미리보기
 
 # 긴급 킬스위치
 touch kill_switch.flag    # 모든 자동 주문 즉시 중단
