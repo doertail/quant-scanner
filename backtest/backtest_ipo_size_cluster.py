@@ -161,6 +161,44 @@ def compute_events(ipo_closes: dict[str, pd.Series],
     return rows
 
 
+def _diff(mean: float | None, base: float | None) -> float | None:
+    """Forward-return mean minus baseline mean, or None if either is missing."""
+    if mean is None or base is None:
+        return None
+    return mean - base
+
+
+def print_split(title: str, key: str, events: list[dict],
+                baseline: dict[str, dict[int, float]]) -> None:
+    """Median-split events by `key` and print HIGH/LOW SPY+QQQ forward returns."""
+    high, low = median_split(events, key)
+    med = summarize([e[key] for e in events])["median"]
+    print(f"[분할] {title} — 중앙값 {med:.2f}  (HIGH {len(high)}개 / LOW {len(low)}개)")
+    print(f"  {'Bucket':>6} | {'Horizon':>7} | {'N':>3} | "
+          f"{'SPY mean':>9} | {'SPY diff':>9} | {'QQQ mean':>9} | {'QQQ diff':>9}")
+    high_weaker = 0
+    for h in HORIZONS:
+        spy_diff_by_bucket: dict[str, float | None] = {}
+        for label, bucket in (("HIGH", high), ("LOW", low)):
+            spy = summarize([e[f"SPY_{h}d"] for e in bucket])
+            qqq = summarize([e[f"QQQ_{h}d"] for e in bucket])
+            sd = _diff(spy["mean"], baseline["SPY"][h])
+            qd = _diff(qqq["mean"], baseline["QQQ"][h])
+            spy_diff_by_bucket[label] = sd
+            sm = f"{spy['mean']*100:>8.2f}%" if spy["mean"] is not None else f"{'—':>9}"
+            sds = f"{sd*100:>+8.2f}%" if sd is not None else f"{'—':>9}"
+            qm = f"{qqq['mean']*100:>8.2f}%" if qqq["mean"] is not None else f"{'—':>9}"
+            qds = f"{qd*100:>+8.2f}%" if qd is not None else f"{'—':>9}"
+            print(f"  {label:>6} | {h:>6}d | {spy['n']:>3} | "
+                  f"{sm} | {sds} | {qm} | {qds}")
+        hi_sd, lo_sd = spy_diff_by_bucket["HIGH"], spy_diff_by_bucket["LOW"]
+        if hi_sd is not None and lo_sd is not None and hi_sd < lo_sd:
+            high_weaker += 1
+    print(f"  → HIGH 버킷 SPY가 LOW보다 약했던 horizon: "
+          f"{high_weaker}/{len(HORIZONS)}  (6/6에 가까울수록 crowding-out 가설 지지)")
+    print()
+
+
 def main() -> None:
     print_config()
     print("[1/3] IPO 종목 데이터 다운로드...")
@@ -174,6 +212,12 @@ def main() -> None:
     events = compute_events(ipo_closes, market)
     print(f"  -> 이벤트 {len(events)}개 | "
           f"베이스라인 SPY 252d {baseline['SPY'][252]*100:.2f}%")
+
+    print()
+    print_split("조달액(deal size $B)", "deal_size_b", events, baseline)
+    print_split("시가총액(market cap $B)", "mktcap_b", events, baseline)
+    print_split("클러스터 강도(±90일 조달액 합 $B)", "cluster_intensity",
+                events, baseline)
 
 
 if __name__ == "__main__":
