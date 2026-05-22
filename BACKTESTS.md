@@ -400,7 +400,11 @@ high-issuance years cluster with strong markets because issuance and a rising
 market share a cause — this backtest cannot separate "supply pressure" from "an
 overheated market." The 252-day forward window from each year's start largely
 overlaps the issuance year itself, so the measurement is near-contemporaneous,
-not predictive. Consecutive years' windows overlap. Anthropic, OpenAI, and SpaceX
+not predictive. Consecutive years' windows overlap. The 252-day baseline excludes
+roughly 155 late-2025 starting points whose forward windows extend past the
+available data into 2026, so the 2025 annual row is compared against a baseline
+that omits contemporaneous entries — re-running this script after 2026 fills in
+will shift the baseline and can change the 2025 diff. Anthropic, OpenAI, and SpaceX
 are private, not in the data, and not backtested.
 
 ---

@@ -102,6 +102,12 @@ def compute_years(market: dict[str, pd.Series]) -> list[dict]:
     return rows
 
 
+def _fmt_pct(row: dict, key: str) -> str:
+    """Format a forward-return value as a right-aligned percent, or — if None."""
+    v = row[key]
+    return f"{v*100:>8.2f}%" if v is not None else f"{'—':>9}"
+
+
 def print_year_table(years: list[dict]) -> None:
     """Print each year's issuance and SPY/QQQ forward returns, highest
     total issuance first.
@@ -110,12 +116,10 @@ def print_year_table(years: list[dict]) -> None:
     print(f"  {'Year':>5} | {'IPO $B':>7} | {'Total $B':>8} | "
           f"{'SPY 126d':>9} | {'SPY 252d':>9} | {'QQQ 126d':>9} | {'QQQ 252d':>9}")
     for r in sorted(years, key=lambda e: e["total_issuance_b"], reverse=True):
-        def fmt(key: str) -> str:
-            v = r[key]
-            return f"{v*100:>8.2f}%" if v is not None else f"{'—':>9}"
         print(f"  {r['year']:>5} | {r['ipo_proceeds_b']:>7.0f} | "
-              f"{r['total_issuance_b']:>8.0f} | {fmt('SPY_126d')} | "
-              f"{fmt('SPY_252d')} | {fmt('QQQ_126d')} | {fmt('QQQ_252d')}")
+              f"{r['total_issuance_b']:>8.0f} | {_fmt_pct(r, 'SPY_126d')} | "
+              f"{_fmt_pct(r, 'SPY_252d')} | {_fmt_pct(r, 'QQQ_126d')} | "
+              f"{_fmt_pct(r, 'QQQ_252d')}")
     print()
 
 
