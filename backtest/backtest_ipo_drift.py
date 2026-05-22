@@ -228,6 +228,22 @@ def print_part_b(rows: list[dict], baseline: dict[str, dict[int, float]]) -> Non
     print()
 
 
+def save_csv(part_a: list[dict], part_b: list[dict]) -> Path:
+    """Merge per-event Part A and Part B rows and write results_ipo_drift.csv."""
+    a_by_ticker = {r["ticker"]: r for r in part_a}
+    merged = []
+    for b in part_b:
+        row = dict(b)
+        a = a_by_ticker.get(b["ticker"], {})
+        for h in HORIZONS:
+            row[f"abs_{h}d"] = a.get(f"abs_{h}d")
+            row[f"exc_{h}d"] = a.get(f"exc_{h}d")
+        merged.append(row)
+    out = Path(__file__).resolve().parent / "results_ipo_drift.csv"
+    pd.DataFrame(merged).to_csv(out, index=False)
+    return out
+
+
 def main() -> None:
     print_config()
     print("[1/?] IPO 종목 데이터 다운로드...")
@@ -243,6 +259,8 @@ def main() -> None:
     part_b = compute_part_b(ipo_closes, market)
     print()
     print_part_b(part_b, baseline)
+    out = save_csv(part_a, part_b)
+    print(f"CSV 저장: {out}")
 
 
 if __name__ == "__main__":
