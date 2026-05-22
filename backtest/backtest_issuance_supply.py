@@ -119,6 +119,54 @@ def print_year_table(years: list[dict]) -> None:
     print()
 
 
+def _diff(mean: float | None, base: float | None) -> float | None:
+    """Forward-return mean minus baseline mean, or None if either is missing."""
+    if mean is None or base is None:
+        return None
+    return mean - base
+
+
+def print_split(years: list[dict],
+                baseline: dict[str, dict[int, float]]) -> None:
+    """Median-split years by total issuance; compare HIGH vs LOW forward returns."""
+    high, low = median_split(years, "total_issuance_b")
+    print(f"[상·하위 절반 비교]  total_issuance 중앙값 분할 — "
+          f"버킷당 LOW {len(low)} / HIGH {len(high)}개 (사례 비교, 통계 아님)")
+    print(f"  {'Bucket':>6} | {'Horizon':>7} | {'SPY mean':>9} | {'SPY diff':>9} | "
+          f"{'QQQ mean':>9} | {'QQQ diff':>9}")
+    for h in HORIZONS:
+        for label, bucket in (("HIGH", high), ("LOW", low)):
+            spy = summarize([e[f"SPY_{h}d"] for e in bucket])
+            qqq = summarize([e[f"QQQ_{h}d"] for e in bucket])
+            sd = _diff(spy["mean"], baseline["SPY"][h])
+            qd = _diff(qqq["mean"], baseline["QQQ"][h])
+            sm = f"{spy['mean']*100:>8.2f}%" if spy["mean"] is not None else f"{'—':>9}"
+            sds = f"{sd*100:>+8.2f}%" if sd is not None else f"{'—':>9}"
+            qm = f"{qqq['mean']*100:>8.2f}%" if qqq["mean"] is not None else f"{'—':>9}"
+            qds = f"{qd*100:>+8.2f}%" if qd is not None else f"{'—':>9}"
+            print(f"  {label:>6} | {h:>6}d | {sm} | {sds} | {qm} | {qds}")
+    print("  → HIGH 버킷 diff가 LOW보다 낮으면 공급충격 가설과 방향 일치")
+    print()
+
+
+def print_correlations(years: list[dict]) -> None:
+    """Pearson r of each issuance variable vs SPY/QQQ forward returns."""
+    print("[상관계수]  Pearson r — N=8, 통계적 의미 없음, 참고용")
+    print(f"  {'변수':>16} | {'SPY 126d':>9} | {'SPY 252d':>9} | "
+          f"{'QQQ 126d':>9} | {'QQQ 252d':>9}")
+    for label, key in (("ipo_proceeds", "ipo_proceeds_b"),
+                       ("total_issuance", "total_issuance_b")):
+        cells = []
+        for sym in ("SPY", "QQQ"):
+            for h in HORIZONS:
+                r = pearson([e[key] for e in years],
+                            [e[f"{sym}_{h}d"] for e in years])
+                cells.append(f"{r:>+8.2f}" if r is not None else f"{'—':>9}")
+        print(f"  {label:>16} | " + " | ".join(cells))
+    print("  (음수 r = 고발행 → 이후 시장 약함. 단 N=8·내생성 때문에 인과 아님)")
+    print()
+
+
 def main() -> None:
     print_config()
     print("[1/2] 시장 데이터(SPY/QQQ) 다운로드...")
@@ -132,6 +180,8 @@ def main() -> None:
 
     print()
     print_year_table(years)
+    print_split(years, baseline)
+    print_correlations(years)
 
 
 if __name__ == "__main__":
