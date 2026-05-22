@@ -156,6 +156,37 @@ def save_state(grades: dict, overall: str) -> None:
                   ensure_ascii=False, indent=2)
 
 
+def format_briefing(date: str, overall: str, grades: dict, details: dict,
+                    changes: list[tuple[str, str, str]], has_prev: bool) -> str:
+    """Render the Discord briefing message."""
+    label = dict(COMPONENTS)
+    lines = [
+        f"📊 위험 브리핑 — {date}",
+        "",
+        f"종합 위험 등급: {overall}",
+        f"자세: {POSTURE[overall]}",
+        "",
+        "대시보드",
+    ]
+    for key, name in COMPONENTS:
+        lines.append(f"  {name:<6} {grades[key]} {details[key]}")
+    lines.append("")
+    lines.append("지난 브리핑 대비 변화")
+    if not has_prev:
+        lines.append("  - 이전 기록 없음 (첫 실행)")
+    elif not changes:
+        lines.append("  - 변화 없음")
+    else:
+        for key, old, new in changes:
+            lines.append(f"  - {label.get(key, key)} {old}→{new}")
+    lines += [
+        "",
+        "⚠️ 이건 예측이 아니라 상태 모니터다. 임계값은 판단값(미최적화),",
+        "   밸류에이션은 MA200 이격도 프록시뿐. 단일 지표가 아니라 앙상블로 읽을 것.",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="시장 위험 브리핑")
     parser.add_argument("--signals", default=str(DEFAULT_SIGNALS),
@@ -175,7 +206,16 @@ def main() -> None:
     overall = grade_overall(grades)
     prev = load_state()
     changes = diff_grades(prev.get("grades", {}), grades)
-    print(f"overall={overall} | grades={grades} | changes={changes}")
+    message = format_briefing(
+        str(signals.get("date", "?")), overall, grades, details,
+        changes, has_prev=bool(prev),
+    )
+    if args.dry_run:
+        print(message)
+    else:
+        send_discord(message)
+        print("Discord 발송 완료")
+    save_state(grades, overall)
 
 
 if __name__ == "__main__":
