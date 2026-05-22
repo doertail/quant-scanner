@@ -107,6 +107,61 @@ def fetch_market_closes() -> dict[str, pd.Series]:
     return out
 
 
+def _series_to_naive(s: pd.Series) -> pd.Series:
+    """Return a copy with a tz-naive DatetimeIndex for safe alignment."""
+    idx = s.index
+    if idx.tz is not None:
+        s = s.copy()
+        s.index = idx.tz_localize(None)
+    return s
+
+
+def compute_part_a(ipo_closes: dict[str, pd.Series],
+                   market: dict[str, pd.Series]) -> list[dict]:
+    """One row per IPO ticker: day-0 close entry, forward abs + SPY-excess returns."""
+    spy = _series_to_naive(market["SPY"])
+    spy_list = spy.tolist()
+    rows: list[dict] = []
+    for ticker, _, ai in IPO_UNIVERSE:
+        if ticker not in ipo_closes:
+            continue
+        closes = _series_to_naive(ipo_closes[ticker])
+        stock_list = closes.tolist()
+        day0 = closes.index[0]
+        spy_idx = spy.index.get_indexer([day0], method="nearest")[0]
+        row = {"ticker": ticker, "ipo_date": day0.date().isoformat(), "ai": ai}
+        for h in HORIZONS:
+            abs_ret = forward_return(stock_list, 0, h)
+            spy_ret = forward_return(spy_list, spy_idx, h)
+            row[f"abs_{h}d"] = abs_ret
+            row[f"exc_{h}d"] = (abs_ret - spy_ret
+                                if abs_ret is not None and spy_ret is not None
+                                else None)
+        rows.append(row)
+    return rows
+
+
+def print_part_a(rows: list[dict]) -> None:
+    print()
+    print("[Part A] IPO 종목 자체 — day-0 종가 진입")
+    for label, subset in (("전체", rows),
+                          ("AI", [r for r in rows if r["ai"]])):
+        print(f"  그룹: {label} (티커 {len(subset)}개)")
+        print(f"  {'Horizon':>8} | {'N':>3} | {'Mean abs':>9} | "
+              f"{'Median abs':>10} | {'Win%':>6} | {'Mean exc vs SPY':>15}")
+        for h in HORIZONS:
+            a = summarize([r[f"abs_{h}d"] for r in subset])
+            e = summarize([r[f"exc_{h}d"] for r in subset])
+            if a["n"] == 0:
+                print(f"  {h:>6}d  | {0:>3} | {'—':>9} | {'—':>10} | "
+                      f"{'—':>6} | {'—':>15}")
+                continue
+            print(f"  {h:>6}d  | {a['n']:>3} | {a['mean']*100:>8.2f}% | "
+                  f"{a['median']*100:>9.2f}% | {a['win_rate']*100:>5.1f}% | "
+                  f"{(e['mean']*100 if e['mean'] is not None else 0):>14.2f}%")
+        print()
+
+
 def main() -> None:
     print_config()
     print("[1/?] IPO 종목 데이터 다운로드...")
@@ -115,6 +170,8 @@ def main() -> None:
     print("[2/?] 시장 데이터(SPY/QQQ) 다운로드...")
     market = fetch_market_closes()
     print(f"  -> SPY {len(market['SPY'])} bars, QQQ {len(market['QQQ'])} bars")
+    part_a = compute_part_a(ipo_closes, market)
+    print_part_a(part_a)
 
 
 if __name__ == "__main__":
