@@ -29,6 +29,11 @@ from dotenv import load_dotenv
 from config import PORTFOLIO_FILE
 from toss_client import TossClient, TossAPIError
 
+# 국내 등 외부 보유는 별도 파일로 관리한다.
+# (스캐너의 save_portfolio()가 portfolio.json을 {holdings, cash}로만 덮어쓰므로
+#  portfolio.json 안에 두면 스캔 1회로 사라진다.)
+EXTERNAL_FILE = PORTFOLIO_FILE.parent / "external_holdings.json"
+
 # 스캐너 전략 관리 대상에서 보존할 상태 필드
 _PRESERVE = ("strategy", "trailing_stop", "tp1_hit", "vix_entry", "auto_invest")
 
@@ -105,10 +110,8 @@ def build_sync(old: dict, toss_holdings: dict, usd_cash: float):
     new_port = dict(old)
     new_port["holdings"] = new_holdings
     new_port["cash"] = round(usd_cash, 2)
-    if external:
-        new_port["external_holdings"] = external
-    elif "external_holdings" in new_port:
-        del new_port["external_holdings"]
+    # 외부 보유는 별도 파일(EXTERNAL_FILE)로 관리하므로 portfolio.json에는 넣지 않는다.
+    new_port.pop("external_holdings", None)
 
     report = {
         "added": added,
@@ -182,6 +185,10 @@ def main() -> int:
         with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
             json.dump(new_port, f, indent=2, ensure_ascii=False)
         print(f"💾 저장: {PORTFOLIO_FILE}")
+        # 외부 보유(국내 등)는 스캐너가 건드리지 않는 별도 파일로
+        with open(EXTERNAL_FILE, "w", encoding="utf-8") as f:
+            json.dump(report["external"], f, indent=2, ensure_ascii=False)
+        print(f"💾 외부 보유: {EXTERNAL_FILE} ({len(report['external'])}종목)")
     else:
         print("\n(미리보기였음 — 실제 반영하려면 --apply)")
 
