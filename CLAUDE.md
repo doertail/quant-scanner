@@ -34,6 +34,10 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `news_filter.py` | 어닝스 캘린더 필터 (±N일 차단) + 뉴스 감성 필터 (Gemini PASS/REDUCE/SKIP) |
 | `portfolio_io.py` | portfolio.json 로드/저장 |
 | `notify.py` | Discord 웹훅 + ANSI 색 제거 |
+| `toss_client.py` | 토스증권 Open API 조회 클라이언트 (`TossClient` — OAuth2 토큰 + 계좌/보유종목/예수금/현재가 조회, 읽기 전용) |
+| `account_status.py` | 토스 계좌 현황 CLI — 잔고+보유종목+예수금. `python account_status.py [--raw] [--account SEQ]` |
+| `prices.py` | 토스 현재가 조회 CLI — `python prices.py 005930 AAPL TSLA [--raw]` (계좌 불필요) |
+| `order_preflight.py` | 주문 직전 점검 CLI (DRY-RUN, 주문 없음) — `python order_preflight.py SYMBOL --side buy/sell --qty N`. 종목·호가·상하한가·유의사항·장운영·수수료·환율 + 매수가능금액/판매가능수량으로 GO/NO-GO 판정 |
 
 ### 데이터
 | 파일 | 역할 |
@@ -76,7 +80,24 @@ GEMINI_API_KEY=...        # 뉴스 감성 필터 (gemini-2.5-flash)
 APCA_API_KEY_ID=...       # execution_layer.py — Alpaca Paper API
 APCA_API_SECRET_KEY=...
 APCA_API_BASE_URL=https://paper-api.alpaca.markets
+TOSS_CLIENT_ID=...        # toss_client.py — 토스증권 Open API (계좌 조회)
+TOSS_CLIENT_SECRET=...
 ```
+
+## 토스증권 Open API (Alpaca→토스 실매매 전환 1단계)
+
+읽기 전용 계좌 조회부터 단계적으로 전환 중.
+
+- **Base URL**: `https://openapi.tossinvest.com` / OAuth2 Client Credentials (`POST /oauth2/token`)
+- **계좌 목록**: `GET /api/v1/accounts` → `accountSeq` 확보
+- **보유종목**: `GET /api/v1/holdings` (국내+미국 통합, `X-Tossinvest-Account: {accountSeq}` 헤더)
+- **예수금**: `GET /api/v1/buying-power` (`X-Tossinvest-Account` 헤더 + `currency`=KRW/USD, 통화별 호출)
+- **현재가**: `GET /api/v1/prices` (`symbols` 콤마구분 최대 200개, 계좌 헤더 불필요)
+- **`TossClient` 조회 메서드 (전부 구현·검증 완료)**: `get_accounts` · `get_holdings` · `get_buying_power` · `get_prices` · `get_orderbook` · `get_price_limits` · `get_exchange_rate` · `get_sellable_quantity` · `get_commissions` · `get_stocks` · `get_stock_warnings` · `get_market_calendar` · `get_candles`
+- 키 발급 시 주의: ① OAuth2 클라이언트 활성화 ② **IP allowlist 등록 필수**(미등록 시 403 `IP not allowed`) ③ 동적 IP면 변경 시 재등록
+- 공식 문서: developers.tossinvest.com / 스펙: openapi.tossinvest.com/openapi-docs/latest/openapi.json
+- 진행: ✅1) 계좌·예수금·시세 조회  ✅2) 전체 조회 API + 주문 직전 점검(order_preflight)  ⬜3) **주문 실행(POST /orders)** — 미구현(의도적 보류). 소액 검증 + 킬스위치 필수
+- **주문 미구현**: `POST /api/v1/orders`(생성), `/orders/{id}/cancel`(취소), `/orders/{id}/modify`(정정), `GET /orders`(목록) — 3단계에서 안전장치와 함께 추가
 
 ## 주요 CONFIG (`config.py`)
 
