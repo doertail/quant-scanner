@@ -472,6 +472,40 @@ drawdown across every regime), but absolute returns should be heavily discounted
 tested on **point-in-time index constituents** (removes B's survivorship bias) — which
 needs a historical-membership dataset not available locally.
 
+### Result D — Return-improvement search, 16 ideas (`backtest_improve.py`)
+
+Each idea overrides one or more globals; regime is **recomputed per config** (VIX bands
+and DCA are baked into `regime_df` at setup, so naive post-setup monkeypatching is a
+silent no-op). DCA is excluded as a lever — `qqqm` shares are tracked separately and
+never enter `eq_hist`, so "more DCA" is just external contribution, not strategy alpha.
+
+| Idea | CAGR | MDD | Sharpe | Verdict |
+|---|---|---|---|---|
+| Baseline | 22.10% | −33.6% | 0.95 | — |
+| **#9 B trailing stop 3×→4× ATR** | **24.38%** | **−32.2%** | **1.04** | **⭐ real improvement** |
+| #1 size up (risk 1→2%) | 22.15% | −41.4% | 0.87 | leverage (worse MDD/Sharpe) |
+| #14 A RSI<30 (deepest dips) | 22.79% | −48.1% | 0.66 | leverage (removes A's dampening) |
+| #6 panic threshold 30→27 | 21.02% | −49.9% | 0.69 | hurts (re-enters worst VIX band) |
+| #2 C weight 20→40% | 21.75% | −34.4% | 0.87 | hurts (idle-cash drag) |
+| #4/#5/#10/#15/#16 + others | 20.2–21.9% | — | < 0.95 | all hurt |
+| Combo: aggressive (all) | 28.52% | −36.1% | 1.05 | inflated — leans on biased B sleeve |
+
+**Findings**:
+1. Of 16 ideas, **only #9 cleanly improves** (higher CAGR, *lower* MDD, higher Sharpe).
+   Mechanism is sound: 3×ATR stops whipsaw momentum winners out on noise; 4× lets them
+   run. Still partly survivorship-flattered (B sleeve), but the drawdown gain is real.
+2. Most parameter tweaks **hurt or are leverage in disguise** — strong evidence the
+   shipped defaults are already near a (likely overfit) optimum.
+3. "Clean" sleeves (C/D, index ETFs) improve *risk*, not *return* — pushing their weight
+   adds cash drag. Several results reconfirm earlier findings (25–30 VIX danger band,
+   A-as-dampener, idle-cash drag).
+4. The remaining honest levers are structural, not parametric: **(a)** point-in-time
+   universe to find the true baseline, **(b)** deploy idle cash into the index instead of
+   0% (not yet implemented), **(c)** add an uncorrelated alpha source.
+
+**Action taken**: adopt `B_ATR_MULT = 4` candidate; treat the aggressive combo's headline
+as bias-inflated.
+
 ---
 
 ## Caveats Common to All Backtests
