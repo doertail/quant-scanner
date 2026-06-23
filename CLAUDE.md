@@ -40,6 +40,7 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `order_preflight.py` | 주문 직전 점검 CLI (DRY-RUN, 주문 없음) — `python order_preflight.py SYMBOL --side buy/sell --qty N`. 종목·호가·상하한가·유의사항·장운영·수수료·환율 + 매수가능금액/판매가능수량으로 GO/NO-GO 판정 |
 | `toss_sync.py` | 토스 실계좌 → `portfolio.json` 동기화 — `python toss_sync.py [--apply] [--discord]`. 기본 dry-run, `--apply` 시 `.bak` 백업 후 갱신. 스캐너 상태(strategy/trailing_stop/tp1) 보존하며 shares·평단만 교정, 신규=Core(재태깅 권장), cash=USD 예수금. 국내 등 외부 보유는 `external_holdings.json`(별도 파일 — 스캐너 save가 안 건드림)으로 분리 |
 | `toss_execution.py` | 토스 자동매매 실행기 (Phase 1 드라이런) — signals.json+실계좌 대조, 안전장치(킬스위치/포지션캡/가격sanity/장운영/Core매도금지) 후 의도 주문을 로그/디스코드. 실주문 미구현(--live 거부) |
+| `forward_test.py` | 페이퍼 forward 검증 — 토스 실시간 시세+스캐너 신호로 가상 포트폴리오 운용, 일별 평가액 누적(`forward_equity.json`). 생존편향 없는 진짜 검증. `python forward_test.py [--cash N]` |
 
 ### 데이터
 | 파일 | 역할 |

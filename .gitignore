@@ -19,3 +19,5 @@ trades.json
 backtest/results_*.csv
 toss_execution_history.json
 toss_execution.log
+forward_paper.json
+forward_equity.json
