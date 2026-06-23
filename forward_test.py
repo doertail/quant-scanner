@@ -82,6 +82,14 @@ def mark_to_market(paper: dict, prices: dict) -> float:
     return round(val, 2)
 
 
+def benchmark_value(paper: dict, qqq_px) -> float | None:
+    """QQQ 단순보유 벤치마크 평가액. benchmark 미설정/가격없음 시 None."""
+    bm = paper.get('benchmark')
+    if not bm or not qqq_px:
+        return None
+    return round(bm['qqq_shares'] * qqq_px, 2)
+
+
 def append_equity(record: dict) -> None:
     hist = json.loads(EQUITY_FILE.read_text(encoding='utf-8')) if EQUITY_FILE.exists() else []
     hist.append(record)
@@ -134,16 +142,27 @@ def main():
             price_fn(it['ticker'])
         n = apply_fills(paper, intents, price_cache)
         value = mark_to_market(paper, price_cache)
+
+        # QQQ 단순보유 벤치마크 (전략 시작 자본과 동일 기준으로 1회 앵커)
+        qqq_px = price_fn('QQQ')
+        if 'benchmark' not in paper and qqq_px:
+            prior = json.loads(EQUITY_FILE.read_text(encoding='utf-8')) if EQUITY_FILE.exists() else []
+            start_cap = prior[0]['value'] if prior else value
+            paper['benchmark'] = {'qqq_shares': round(start_cap / qqq_px, 6), 'anchor_px': qqq_px}
+        qqq_value = benchmark_value(paper, qqq_px)
     except (TossAPIError, KeyError, IndexError) as e:
         print(f'토스 조회 실패 — 중단: {e}'); return 1
 
     PAPER_FILE.write_text(json.dumps(paper, ensure_ascii=False, indent=2), encoding='utf-8')
     today = datetime.today().strftime('%Y-%m-%d')
+    edge = round(value - qqq_value, 2) if qqq_value is not None else None
     append_equity({'date': today, 'value': value, 'cash': round(paper['cash'], 2),
-                   'n_pos': len(paper['holdings']), 'trades': n})
+                   'n_pos': len(paper['holdings']), 'trades': n,
+                   'qqq': qqq_value, 'edge_vs_qqq': edge})
 
+    bench = f" | QQQ ${qqq_value:,.2f} (전략 {edge:+,.2f})" if qqq_value is not None else ""
     print(f"[forward {today}] 페이퍼 평가액 ${value:,.2f} | 현금 ${paper['cash']:,.2f} "
-          f"| 보유 {len(paper['holdings'])}종목 | 오늘 체결 {n}건")
+          f"| 보유 {len(paper['holdings'])}종목 | 오늘 체결 {n}건{bench}")
     return 0
 
 

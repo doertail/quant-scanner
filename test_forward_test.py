@@ -29,3 +29,10 @@ def test_mark_to_market_sums_cash_and_positions():
     paper = {'cash': 100.0, 'holdings': {'AAA': {'shares': 2.0}, 'BBB': {'shares': 3.0}}}
     val = ft.mark_to_market(paper, {'AAA': 10.0, 'BBB': 5.0})
     assert val == 100.0 + 20.0 + 15.0
+
+
+def test_benchmark_value():
+    paper = {'benchmark': {'qqq_shares': 2.0}}
+    assert ft.benchmark_value(paper, 100.0) == 200.0
+    assert ft.benchmark_value({}, 100.0) is None
+    assert ft.benchmark_value(paper, None) is None
