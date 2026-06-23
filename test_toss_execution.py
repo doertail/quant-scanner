@@ -44,3 +44,15 @@ def test_format_intent_line_readable():
     it = te.make_intent('sell', 'HSY', 2, 168.6, strategy='A', signal='STOP')
     line = te.format_intent(it)
     assert 'SELL' in line and 'HSY' in line and '2' in line and 'STOP' in line
+
+def test_process_exits_skips_core_and_unheld():
+    held = {'HSY': {'shares': 2.0, 'last': 168.6}, 'TSLA': {'shares': 1.76, 'last': 396.4}}
+    port = {'HSY': {'strategy': 'A'}, 'TSLA': {'strategy': 'Core'}}
+    exits = [
+        {'ticker': 'HSY', 'signal': 'STOP', 'strategy': 'A'},     # 매도 대상
+        {'ticker': 'TSLA', 'signal': 'STOP', 'strategy': 'Core'}, # Core → 스킵
+        {'ticker': 'NVDA', 'signal': 'STOP', 'strategy': 'B'},    # 미보유 → 스킵
+    ]
+    intents = te.process_exits(exits, held, port)
+    assert len(intents) == 1
+    assert intents[0]['ticker'] == 'HSY' and intents[0]['qty'] == 2.0

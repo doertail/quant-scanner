@@ -107,3 +107,22 @@ def fetch_snapshot(client: TossClient) -> dict:
     snap = parse_account_snapshot(holdings, usd_cash)
     snap['seq'] = seq
     return snap
+
+
+def process_exits(exits: list, held: dict, portfolio: dict) -> list:
+    """매도 의도 리스트 반환 (드라이런). 실제 보유 + Core 아님만."""
+    intents = []
+    for ex in exits or []:
+        t = ex['ticker']
+        if t not in held or held[t]['shares'] <= 0:
+            log.info(f'{t} 미보유 — 청산 스킵')
+            continue
+        if is_core(portfolio.get(t, {})):
+            log.info(f'{t} Core — 자동 매도 안 함')
+            continue
+        qty = decide_exit_qty(ex['signal'], held[t]['shares'])
+        if qty <= 0:
+            continue
+        intents.append(make_intent('sell', t, qty, held[t]['last'],
+                                   strategy=ex.get('strategy'), signal=ex['signal']))
+    return intents
