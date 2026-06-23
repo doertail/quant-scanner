@@ -162,3 +162,117 @@ def process_entries(entries, regime, held, account_value, usd_cash, price_fn) ->
     for cand in (entries.get('C') or []):
         usd_cash = _entry_one(cand, 'C', held, account_value, usd_cash, price_fn, intents)
     return intents
+
+
+def check_kill_switch():
+    if KILL_SWITCH.exists():
+        log.warning('🛑 킬스위치 활성 — 전면 중단')
+        send_discord('## 🛑 toss_execution 강제 중단 (kill_switch.flag)')
+        sys.exit(0)
+
+
+def send_discord(message: str):
+    import requests
+    url = os.getenv('DISCORD_WEBHOOK_URL', '')
+    if not url:
+        return
+    try:
+        for c in [message[i:i+1900] for i in range(0, len(message), 1900)]:
+            requests.post(url, json={'content': c, 'username': 'TossExec(DRY)'}, timeout=10)
+    except Exception as e:
+        log.error(f'Discord 실패: {e}')
+
+
+def market_open_us(client: TossClient) -> bool:
+    """미국 정규장 개장 여부(best-effort). 실패 시 안전하게 False."""
+    try:
+        from datetime import timezone
+        cal = client.get_market_calendar('US')
+        reg = ((cal.get('result') or {}).get('today') or {}).get('regularMarket') or {}
+        s, e = reg.get('startTime'), reg.get('endTime')
+        if not (s and e):
+            return False
+        now = datetime.now(timezone.utc)
+        return datetime.fromisoformat(s) <= now <= datetime.fromisoformat(e)
+    except Exception as ex:
+        log.warning(f'장운영 조회 실패(보수적으로 미개장 처리): {ex}')
+        return False
+
+
+def report(intents: list, snap: dict, market_is_open: bool):
+    now = datetime.today().strftime('%Y-%m-%d %H:%M')
+    lines = [f'## 🧪 토스 실행기 DRY-RUN  [{now}]', '```']
+    lines.append(f"계좌평가 ${snap['account_value_usd']:,.2f} | 예수금 ${snap['usd_cash']:,.2f} "
+                 f"| 장 {'OPEN' if market_is_open else 'CLOSED'}")
+    sells = [i for i in intents if i['side'] == 'sell']
+    buys  = [i for i in intents if i['side'] == 'buy']
+    lines.append(f"\n[의도된 매도 {len(sells)}]")
+    lines += ['  ' + format_intent(i) for i in sells] or ['  없음']
+    lines.append(f"\n[의도된 매수 {len(buys)}]")
+    lines += ['  ' + format_intent(i) for i in buys] or ['  없음']
+    if not market_is_open:
+        lines.append('\n⚠️ 정규장 미개장 — 실거래였다면 보류됨')
+    lines.append('```')
+    send_discord('\n'.join(lines))
+    for line in lines:
+        log.info(line)
+
+
+def main():
+    ap = argparse.ArgumentParser(description='토스 자동매매 실행기 (드라이런)')
+    ap.add_argument('--live', action='store_true', help='[Phase 2] 실제 주문 — 현재 미구현')
+    args = ap.parse_args()
+    if args.live:
+        log.error('❌ --live는 Phase 2(create_order 구현)까지 비활성. 드라이런만 가능.')
+        sys.exit(2)
+
+    check_kill_switch()
+    try:
+        signals = json.loads(SIGNALS_FILE.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        log.error('signals.json 없음 — scanner_v4.py 먼저 실행'); sys.exit(1)
+    if signals.get('date') != datetime.today().strftime('%Y-%m-%d'):
+        log.warning(f"signals.json 날짜 불일치({signals.get('date')}) — 오래된 신호일 수 있음")
+
+    try:
+        portfolio = json.loads(PORTFOLIO_FILE.read_text(encoding='utf-8')).get('holdings', {})
+    except (FileNotFoundError, ValueError):
+        portfolio = {}
+
+    try:
+        client = TossClient()
+        snap = fetch_snapshot(client)
+        mkt_open = market_open_us(client)
+        price_map = {}
+
+        def price_fn(t):
+            if t not in price_map:
+                try:
+                    res = client.get_prices(t).get('result') or [{}]
+                    price_map[t] = float(res[0].get('lastPrice')) if res else None
+                except (TossAPIError, ValueError, TypeError):
+                    price_map[t] = None
+            return price_map[t]
+
+        regime  = signals.get('regime', {})
+        exits   = process_exits(signals.get('exits', []), snap['held'], portfolio)
+        # 포지션 캡: portfolio.json의 전략별 카운트로 차단
+        counts = count_positions_by_strategy(portfolio)
+        if counts['A'] >= MAX_POS_A:
+            regime = {**regime, 'allow_entry_a': False}
+        if counts['B'] >= MAX_POS_B:
+            regime = {**regime, 'allow_entry_b': False}
+        entries = process_entries(signals.get('entries', {}), regime, snap['held'],
+                                  snap['account_value_usd'], snap['usd_cash'], price_fn)
+        intents = exits + entries
+    except (TossAPIError, KeyError, IndexError) as e:
+        log.error(f'토스 조회 실패 — 중단: {e}'); sys.exit(1)
+
+    for it in intents:
+        append_history({'date': datetime.today().strftime('%Y-%m-%d'), **it})
+    report(intents, snap, mkt_open)
+    log.info(f'드라이런 완료: 의도 {len(intents)}건 (실제 주문 없음)')
+
+
+if __name__ == '__main__':
+    main()
