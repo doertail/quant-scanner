@@ -56,7 +56,7 @@ A_ATR_TIGHT    = 1.5          # TP1 이후 타이트 스톱 배수
 B_MOM_LONG     = 126
 B_MOM_SHORT    = 63
 B_RANK_TOP     = 0.25
-B_ATR_MULT     = 3.0
+B_ATR_MULT     = 4.0          # 3→4 상향 (backtest_improve 검증: CAGR↑·MDD↓·Sharpe↑. 모멘텀 승자 whipsaw 감소)
 B_MA_EXIT_PD   = 50
 
 # 전략 C — VIX 패닉 지수 매수 (백테스트: SPY 96.4% 승률, 평균 +11.5%, Sharpe 1.21)
