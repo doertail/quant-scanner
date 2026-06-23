@@ -74,3 +74,36 @@ def append_history(record: dict) -> None:
         hist = []
     hist.append(record)
     EXEC_LOG.write_text(json.dumps(hist, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+
+
+def _f(x, d=0.0):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return d
+
+
+def parse_account_snapshot(holdings_resp: dict, usd_cash: float) -> dict:
+    """토스 holdings 응답 → {usd_cash, account_value_usd, held{ticker:{shares,last}}}.
+    미국 종목만 held에 담는다(스캐너는 US 유니버스)."""
+    r = holdings_resp.get('result', {}) or {}
+    mkt_usd = _f((((r.get('marketValue') or {}).get('amount')) or {}).get('usd'))
+    held = {}
+    for it in r.get('items', []) or []:
+        if it.get('marketCountry') != 'US':
+            continue
+        held[it['symbol']] = {'shares': _f(it.get('quantity')),
+                              'last': _f(it.get('lastPrice'))}
+    return {'usd_cash': usd_cash,
+            'account_value_usd': round(mkt_usd + usd_cash, 2),
+            'held': held}
+
+
+def fetch_snapshot(client: TossClient) -> dict:
+    """실제 토스 호출로 스냅샷 구성 (셸)."""
+    seq = client.get_accounts()['result'][0]['accountSeq']
+    holdings = client.get_holdings(seq)
+    usd_cash = _f((client.get_buying_power(seq, 'USD').get('result') or {}).get('cashBuyingPower'))
+    snap = parse_account_snapshot(holdings, usd_cash)
+    snap['seq'] = seq
+    return snap

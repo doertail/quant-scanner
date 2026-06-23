@@ -1,6 +1,27 @@
 import toss_execution as te
 
 
+SAMPLE_HOLDINGS = {
+    "result": {
+        "marketValue": {"amount": {"krw": "1464250", "usd": "5503.13"}},
+        "items": [
+            {"symbol": "TSLA", "marketCountry": "US", "quantity": "1.76",
+             "currency": "USD", "lastPrice": "396.4"},
+            {"symbol": "472150", "marketCountry": "KR", "quantity": "50",
+             "currency": "KRW", "lastPrice": "29285"},
+        ],
+    }
+}
+
+def test_parse_account_snapshot_us_only_held():
+    snap = te.parse_account_snapshot(SAMPLE_HOLDINGS, usd_cash=4254.67)
+    assert snap['usd_cash'] == 4254.67
+    assert snap['account_value_usd'] == 5503.13 + 4254.67
+    # 미국 보유만 held에 (국내 472150 제외)
+    assert 'TSLA' in snap['held'] and '472150' not in snap['held']
+    assert snap['held']['TSLA']['shares'] == 1.76
+
+
 def test_decide_exit_qty_tp1_is_half():
     assert te.decide_exit_qty('TP1', 10.0) == 5.0
 
