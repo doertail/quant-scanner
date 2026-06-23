@@ -121,6 +121,25 @@ class TossClient:
         except ValueError as e:
             raise TossAPIError(f"{path} 응답이 JSON이 아님", body=resp.text) from e
 
+    def _post(self, path: str, account_seq: int | str | None = None, body: dict | None = None) -> dict:
+        headers = {"Authorization": f"Bearer {self._get_token()}",
+                   "Content-Type": "application/json"}
+        if account_seq is not None:
+            headers["X-Tossinvest-Account"] = str(account_seq)
+        try:
+            resp = requests.post(BASE_URL + path, headers=headers, json=body, timeout=DEFAULT_TIMEOUT)
+        except requests.RequestException as e:
+            raise TossAPIError(f"{path} 네트워크 오류: {e}") from e
+        if resp.status_code not in (200, 201):
+            raise TossAPIError(
+                f"{path} 호출 실패 (HTTP {resp.status_code})",
+                status=resp.status_code, body=resp.text,
+            )
+        try:
+            return resp.json()
+        except ValueError as e:
+            raise TossAPIError(f"{path} 응답이 JSON이 아님", body=resp.text) from e
+
     # ─── 조회 메서드 ───────────────────────────────────────────────────────
     def get_accounts(self) -> dict:
         """계좌 목록 조회. GET /api/v1/accounts"""
@@ -226,3 +245,43 @@ class TossClient:
         if adjusted is not None:
             params["adjusted"] = str(adjusted).lower()
         return self._get("/api/v1/candles", params=params)
+
+    # ─── 주문 (실거래 — 신중히) ────────────────────────────────────────────
+    @staticmethod
+    def build_order_body(symbol, side, quantity=None, order_amount=None,
+                         order_type="MARKET", price=None, client_order_id=None) -> dict:
+        """주문 요청 바디 생성 (순수 함수 — 테스트 가능, 전송 안 함).
+
+        side: 'BUY'|'SELL' / order_type: 'MARKET'|'LIMIT'
+        quantity(수량) 또는 order_amount(금액) 중 하나. LIMIT은 price 필수.
+        """
+        side = side.upper()
+        order_type = order_type.upper()
+        if side not in ("BUY", "SELL"):
+            raise TossAPIError(f"side는 BUY/SELL: {side}")
+        if order_type not in ("MARKET", "LIMIT"):
+            raise TossAPIError(f"order_type은 MARKET/LIMIT: {order_type}")
+        if quantity is None and order_amount is None:
+            raise TossAPIError("quantity 또는 order_amount 중 하나는 필수")
+        if order_type == "LIMIT" and price is None:
+            raise TossAPIError("LIMIT 주문은 price 필수")
+        body: dict = {"symbol": symbol, "side": side, "orderType": order_type}
+        if quantity is not None:
+            body["quantity"] = str(quantity)
+        if order_amount is not None:
+            body["orderAmount"] = str(order_amount)
+        if price is not None:
+            body["price"] = str(price)
+        if client_order_id:
+            body["clientOrderId"] = client_order_id
+        return body
+
+    def create_order(self, account_seq, symbol, side, quantity=None, order_amount=None,
+                     order_type="MARKET", price=None, client_order_id=None) -> dict:
+        """⚠️ 실제 주문 생성. POST /api/v1/orders — 되돌릴 수 없음.
+
+        호출 전 build_order_body로 바디를 확인하고, 상위 레이어에서 확인 절차를 거칠 것.
+        """
+        body = self.build_order_body(symbol, side, quantity, order_amount,
+                                     order_type, price, client_order_id)
+        return self._post("/api/v1/orders", account_seq=account_seq, body=body)
