@@ -263,6 +263,8 @@ class TossClient:
             raise TossAPIError(f"order_type은 MARKET/LIMIT: {order_type}")
         if quantity is None and order_amount is None:
             raise TossAPIError("quantity 또는 order_amount 중 하나는 필수")
+        if quantity is not None and order_amount is not None:
+            raise TossAPIError("quantity와 order_amount는 동시에 사용 불가 (하나만)")
         if order_type == "LIMIT" and price is None:
             raise TossAPIError("LIMIT 주문은 price 필수")
         body: dict = {"symbol": symbol, "side": side, "orderType": order_type}

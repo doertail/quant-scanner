@@ -32,3 +32,8 @@ def test_build_rejects_no_qty_no_amount():
 def test_build_rejects_bad_side():
     with pytest.raises(TossAPIError):
         TossClient.build_order_body("PPL", "HOLD", quantity="1")
+
+
+def test_build_rejects_both_qty_and_amount():
+    with pytest.raises(TossAPIError):
+        TossClient.build_order_body("PPL", "SELL", quantity="12", order_amount="100")
