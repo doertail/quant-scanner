@@ -52,3 +52,25 @@ def decide_exit_qty(signal: str, shares: float) -> float:
 def is_core(pos: dict) -> bool:
     """Core 전략 = 자동 매도 대상 아님."""
     return pos.get('strategy') == 'Core'
+
+
+def make_intent(side, ticker, qty, ref_price, strategy=None, signal=None) -> dict:
+    return {
+        'mode': 'DRY', 'side': side, 'ticker': ticker, 'qty': qty,
+        'ref_price': ref_price, 'strategy': strategy, 'signal': signal,
+        'ts': datetime.today().strftime('%Y-%m-%d %H:%M:%S'),
+    }
+
+
+def format_intent(it: dict) -> str:
+    tag = f"[{it['signal']}]" if it.get('signal') else f"[전략 {it.get('strategy', '?')}]"
+    return f"{it['side'].upper():4} {it['ticker']:6} {it['qty']}주 @ ~{it['ref_price']} {tag}"
+
+
+def append_history(record: dict) -> None:
+    try:
+        hist = json.loads(EXEC_LOG.read_text(encoding='utf-8')) if EXEC_LOG.exists() else []
+    except (ValueError, OSError):
+        hist = []
+    hist.append(record)
+    EXEC_LOG.write_text(json.dumps(hist, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
