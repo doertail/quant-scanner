@@ -17,3 +17,5 @@ briefing_state.json
 trades.json
 # Backtest output files (reproducible, not committed)
 backtest/results_*.csv
+toss_execution_history.json
+toss_execution.log
