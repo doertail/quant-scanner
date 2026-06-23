@@ -821,6 +821,7 @@ def run_backtest(
 
     return {
         'main': calc_stats(eq_hist, INITIAL_CASH, trades_a + trades_b + trades_c + trades_d),
+        'equity': eq_hist,   # 일별 자산곡선 (len == all_dates) — 레버리지/벤치마크 분석용
         'A':    _trade_stats(trades_a),
         'B':    _trade_stats(trades_b),
         'C':    _trade_stats(trades_c),
