@@ -56,3 +56,27 @@ def test_process_exits_skips_core_and_unheld():
     intents = te.process_exits(exits, held, port)
     assert len(intents) == 1
     assert intents[0]['ticker'] == 'HSY' and intents[0]['qty'] == 2.0
+
+def test_process_entries_caps_and_cash():
+    # price_fn: 스캐너가와 동일 현재가 반환 (sanity 통과)
+    price_fn = lambda t: {'DOW': 30.0, 'AAPL': 190.0}.get(t)
+    regime = {'allow_entry_a': True, 'allow_entry_b': True, 'vix': 16.5}
+    entries = {
+        'A': [{'ticker': 'DOW', 'close': 30.0, 'stop': 26.7, 'rsi': 28.7}],
+        'B': [{'ticker': 'AAPL', 'close': 190.0, 'stop': 175.0, 'rsi': 70}],
+        'C': [],
+    }
+    held = {}
+    intents = te.process_entries(entries, regime, held, account_value=100000.0,
+                                 usd_cash=100000.0, price_fn=price_fn)
+    tickers = {i['ticker'] for i in intents}
+    assert tickers == {'DOW', 'AAPL'}
+    assert all(i['side'] == 'buy' and i['qty'] >= 1 for i in intents)
+
+def test_process_entries_blocks_when_cash_too_low():
+    price_fn = lambda t: 30.0
+    regime = {'allow_entry_a': True, 'allow_entry_b': False}
+    entries = {'A': [{'ticker': 'DOW', 'close': 30.0, 'stop': 26.7, 'rsi': 28.7}], 'B': [], 'C': []}
+    intents = te.process_entries(entries, regime, {}, account_value=100000.0,
+                                 usd_cash=5.0, price_fn=price_fn)
+    assert intents == []   # 예수금 $5 < 1주 가격 → 진입 불가

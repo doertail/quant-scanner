@@ -126,3 +126,39 @@ def process_exits(exits: list, held: dict, portfolio: dict) -> list:
         intents.append(make_intent('sell', t, qty, held[t]['last'],
                                    strategy=ex.get('strategy'), signal=ex['signal']))
     return intents
+
+
+def _entry_one(cand, strategy, held, account_value, usd_cash, price_fn, intents):
+    t = cand['ticker']
+    if t in held:
+        log.info(f'{t} 이미 보유 — 진입 스킵')
+        return usd_cash
+    scanner_price = float(cand['close'])
+    atr_val = (scanner_price - float(cand.get('stop', scanner_price * 0.97))) / 3.0
+    cur = price_fn(t)
+    if cur is None:
+        log.warning(f'{t} 현재가 조회 실패 — 스킵')
+        return usd_cash
+    if not check_price_sanity(cur, scanner_price, t):
+        return usd_cash
+    qty = calc_shares(account_value, cur, atr_val, strategy)
+    cost = qty * cur
+    if qty < 1 or cost > usd_cash:
+        log.info(f'{t} 예수금 부족/수량 0 (필요 ${cost:,.2f} > 가용 ${usd_cash:,.2f}) — 스킵')
+        return usd_cash
+    intents.append(make_intent('buy', t, qty, cur, strategy=strategy))
+    return usd_cash - cost
+
+
+def process_entries(entries, regime, held, account_value, usd_cash, price_fn) -> list:
+    """매수 의도 리스트(드라이런). A/B 각 1건, C 전체. 예수금 차감 반영."""
+    intents = []
+    if regime.get('allow_entry_a'):
+        for cand in (entries.get('A') or [])[:1]:
+            usd_cash = _entry_one(cand, 'A', held, account_value, usd_cash, price_fn, intents)
+    if regime.get('allow_entry_b'):
+        for cand in (entries.get('B') or [])[:1]:
+            usd_cash = _entry_one(cand, 'B', held, account_value, usd_cash, price_fn, intents)
+    for cand in (entries.get('C') or []):
+        usd_cash = _entry_one(cand, 'C', held, account_value, usd_cash, price_fn, intents)
+    return intents
