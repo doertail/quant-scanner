@@ -21,3 +21,7 @@ toss_execution_history.json
 toss_execution.log
 forward_paper.json
 forward_equity.json
+run_forward.sh
+forward_cron.log
+forward_launchd.out
+forward_launchd.err

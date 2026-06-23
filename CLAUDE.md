@@ -119,4 +119,14 @@ TOSS_CLIENT_SECRET=...
 
 ## launchd 설정 (선택)
 
-평일 장 마감 후 자동 실행이 필요하면 plist를 직접 작성해 등록한다. 현재는 등록된 plist 없음.
+**등록됨**: `com.quantscanner.forward` (`~/Library/LaunchAgents/com.quantscanner.forward.plist`)
+— KST 화~토 07:30(미국장 마감 후) `run_forward.sh` 실행 → `scanner_v4.py` + `forward_test.py`.
+로그: `forward_cron.log`. 맥이 깨어있을 때 실행(절전 중이면 깨어날 때 보충).
+
+```bash
+launchctl list | grep quantscanner                 # 등록 확인
+launchctl unload ~/Library/LaunchAgents/com.quantscanner.forward.plist   # 중단
+launchctl load -w ~/Library/LaunchAgents/com.quantscanner.forward.plist  # 재개
+```
+
+> `run_forward.sh`, `forward_*.log/out/err`는 머신 종속이라 .gitignore.
