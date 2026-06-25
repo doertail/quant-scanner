@@ -51,23 +51,23 @@ def _try(label, fn, errors):
 
 
 def _market_open(cal: dict) -> str:
-    """오늘 정규장 시간으로 현재 개장 여부 추정 (best-effort)."""
-    reg = _dig(cal, "result", "today", "integrated", "regularMarket") or \
-        _dig(cal, "result", "today", "regularMarket")
-    if not reg:
-        return "장운영 정보 없음(휴장일 수 있음)"
-    start, end = reg.get("startTime"), reg.get("endTime")
-    if not (start and end):
-        return "정규장 시간 정보 없음"
-    try:
-        s = datetime.fromisoformat(start)
-        e = datetime.fromisoformat(end)
-        now = datetime.now(timezone.utc)
-        if s <= now <= e:
-            return f"🟢 정규장 OPEN (~{end[11:16]})"
-        return f"🔴 정규장 CLOSED (정규장 {start[11:16]}~{end[11:16]})"
-    except ValueError:
-        return f"정규장 {start}~{end}"
+    """현재 개장 여부. today + previousBusinessDay 세션 모두 확인
+    (미국장은 KST 자정을 넘기므로 활성 세션이 전일자에 들어있을 수 있음)."""
+    now = datetime.now(timezone.utc)
+    for key in ("today", "previousBusinessDay", "nextBusinessDay"):
+        reg = (_dig(cal, "result", key, "regularMarket")
+               or _dig(cal, "result", key, "integrated", "regularMarket"))
+        if not reg:
+            continue
+        start, end = reg.get("startTime"), reg.get("endTime")
+        if not (start and end):
+            continue
+        try:
+            if datetime.fromisoformat(start) <= now <= datetime.fromisoformat(end):
+                return f"🟢 정규장 OPEN (~{end[11:16]})"
+        except ValueError:
+            continue
+    return "🔴 정규장 CLOSED"
 
 
 def main() -> int:

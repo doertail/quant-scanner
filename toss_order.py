@@ -32,16 +32,7 @@ def _market_for(symbol: str) -> str:
 
 
 def _is_open(client: TossClient, country: str) -> bool:
-    try:
-        cal = client.get_market_calendar(country)
-        reg = ((cal.get("result") or {}).get("today") or {}).get("regularMarket") or {}
-        s, e = reg.get("startTime"), reg.get("endTime")
-        if not (s and e):
-            return False
-        now = datetime.now(timezone.utc)
-        return datetime.fromisoformat(s) <= now <= datetime.fromisoformat(e)
-    except Exception:
-        return False
+    return client.is_market_open(country)   # today+previousBusinessDay 확인 (KST 자정 버그 수정)
 
 
 def main() -> int:

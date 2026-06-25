@@ -184,19 +184,8 @@ def send_discord(message: str):
 
 
 def market_open_us(client: TossClient) -> bool:
-    """미국 정규장 개장 여부(best-effort). 실패 시 안전하게 False."""
-    try:
-        from datetime import timezone
-        cal = client.get_market_calendar('US')
-        reg = ((cal.get('result') or {}).get('today') or {}).get('regularMarket') or {}
-        s, e = reg.get('startTime'), reg.get('endTime')
-        if not (s and e):
-            return False
-        now = datetime.now(timezone.utc)
-        return datetime.fromisoformat(s) <= now <= datetime.fromisoformat(e)
-    except Exception as ex:
-        log.warning(f'장운영 조회 실패(보수적으로 미개장 처리): {ex}')
-        return False
+    """미국 정규장 개장 여부 — today+previousBusinessDay 확인(KST 자정 버그 수정)."""
+    return client.is_market_open('US')
 
 
 def report(intents: list, snap: dict, market_is_open: bool):

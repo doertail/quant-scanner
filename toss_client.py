@@ -222,6 +222,28 @@ class TossClient:
         params = {"date": date} if date else None
         return self._get(f"/api/v1/market-calendar/{country}", params=params)
 
+    def is_market_open(self, country: str) -> bool:
+        """정규장 개장 여부. today + previousBusinessDay 세션 모두 확인.
+        (미국장은 KST 자정을 넘기므로 활성 세션이 전일자 'previousBusinessDay'에
+        들어있을 수 있음 — today만 보면 자정~새벽에 오판한다.)"""
+        from datetime import datetime, timezone
+        try:
+            cal = self.get_market_calendar(country).get("result") or {}
+        except TossAPIError:
+            return False
+        now = datetime.now(timezone.utc)
+        for key in ("today", "previousBusinessDay", "nextBusinessDay"):
+            day = cal.get(key) or {}
+            reg = day.get("regularMarket") or (day.get("integrated") or {}).get("regularMarket") or {}
+            s, e = reg.get("startTime"), reg.get("endTime")
+            if s and e:
+                try:
+                    if datetime.fromisoformat(s) <= now <= datetime.fromisoformat(e):
+                        return True
+                except ValueError:
+                    continue
+        return False
+
     def get_candles(
         self,
         symbol: str,
