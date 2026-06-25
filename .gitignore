@@ -25,3 +25,4 @@ run_forward.sh
 forward_cron.log
 forward_launchd.out
 forward_launchd.err
+megadip.json

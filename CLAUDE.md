@@ -43,6 +43,7 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `forward_test.py` | 페이퍼 forward 검증 — 토스 실시간 시세+스캐너 신호로 가상 포트폴리오 운용, 일별 평가액 + **QQQ 단순보유 벤치마크** 누적(`forward_equity.json`의 `qqq`/`edge_vs_qqq`). "전략 vs 시장" 비교 = 엣지 진짜 여부 판단. `python forward_test.py [--cash N]` |
 | `toss_order.py` | **실주문 CLI (Phase 2, 실제 돈)** — `python toss_order.py SYMBOL BUY/SELL QTY [--type LIMIT --price P] [--yes]`. 기본 드라이 프리뷰, **`--yes`로만 실제 전송**, 킬스위치·장운영 가드레일. `TossClient.create_order`(POST /api/v1/orders) 사용. 미국주식은 미국장 개장 필요. 소수점은 `--amount`(orderAmount) 사용 |
 | `daily_report.py` | 일일 기술적 요약 → 디스코드 (**LLM·비용 0**, 로컬 파일 기반). signals/portfolio/forward_equity → 레짐+보유손익(토스 시세 best-effort)+액션+forward vs QQQ. `[--no-send] [--no-prices]`. launchd(run_forward.sh)가 매일 자동 전송 |
+| `megadip.py` | **메가캡 딥 전략 모니터 (ABC와 별개 자문)** — 검증: backtest_megacap_dip(QQQ+1%p, 생존편향). 진입 RSI<30 / 청산 RSI>50 또는 120일. 관리 포지션은 `megadip.json`(.gitignore, 예: MSFT). 워치리스트=메가캡 12종. 디스코드 신호, launchd 자동. 실매매는 수동 |
 
 ### 데이터
 | 파일 | 역할 |
