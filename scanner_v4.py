@@ -138,13 +138,25 @@ def main() -> None:
     # ── 3. 거시 필터: QQQ vs MA200 + ADX ─────────────────────────────────────
     bull_regime = True   # 하위 호환성용, 아래에서 재산출
     qqq_price = qqq_ma200 = adx_val = plus_di_val = minus_di_val = float('nan')
+
+    def _load_qqq(qdf):
+        nonlocal qqq_price, qqq_ma200, adx_val, plus_di_val, minus_di_val
+        qdf = qdf[['High', 'Low', 'Close']].dropna()
+        if len(qdf) < QQQ_MA_PERIOD:        # 배치 NaN/부족 → 예외 발생시켜 개별 재시도 유도
+            raise ValueError(f"QQQ 데이터 부족 ({len(qdf)} < {QQQ_MA_PERIOD})")
+        qqq_price = float(qdf['Close'].iloc[-1])
+        qqq_ma200 = float(qdf['Close'].rolling(QQQ_MA_PERIOD).mean().iloc[-1])
+        adx_val, plus_di_val, minus_di_val = compute_adx(qdf, ADX_PERIOD)
+
     try:
-        qqq_df    = raw['QQQ'][['High', 'Low', 'Close']].dropna()
-        qqq_price = float(qqq_df['Close'].iloc[-1])
-        qqq_ma200 = float(qqq_df['Close'].rolling(QQQ_MA_PERIOD).mean().iloc[-1])
-        adx_val, plus_di_val, minus_di_val = compute_adx(qqq_df, ADX_PERIOD)
+        _load_qqq(raw['QQQ'])
     except Exception as e:
-        log.warning(f"QQQ 거시 필터 실패 (상승장 가정): {e}")
+        log.warning(f"QQQ 배치 실패 → 개별 다운로드 재시도: {e}")
+        try:
+            _load_qqq(yf.download('QQQ', period='400d', progress=False, multi_level_index=False))
+            log.info(f"QQQ 개별 다운로드 성공: ${qqq_price:.2f}")
+        except Exception as e2:
+            log.error(f"QQQ 개별 다운로드도 실패 — 레짐 폴백 중립(SIDEWAYS): {e2}")
 
     # ── 3b. VIX 레벨 파악 (배치 다운로드 실패 방지 위해 개별 다운로드) ─────────
     vix_price = float('nan')
@@ -286,17 +298,24 @@ def main() -> None:
         log.warning(f"시장 폭 계산 실패: {e}")
 
     # ── 3-레이어 투표 → market_regime ────────────────────────────────────
+    def _qqq_fallback():
+        # QQQ 데이터 불명(NaN)이면 중립(SIDEWAYS) — 가짜 BEAR 방지.
+        # (nan > nan == False라 예전엔 데이터 글리치가 무조건 BEAR로 떨어졌음)
+        if pd.isna(qqq_price) or pd.isna(qqq_ma200):
+            return 'SIDEWAYS'
+        return 'BULL' if qqq_price > qqq_ma200 else 'BEAR'
+
     # Layer 1: ADX
     if not pd.isna(adx_val) and adx_val >= ADX_TREND_THRESHOLD:
         layer1_vote = 'BULL' if plus_di_val > minus_di_val else 'BEAR'
     elif not pd.isna(adx_val) and adx_val < ADX_SIDEWAYS_THRESHOLD:
         layer1_vote = 'SIDEWAYS'
     else:  # ADX 20–25 회색 지대: QQQ vs MA200 폴백
-        layer1_vote = 'BULL' if qqq_price > qqq_ma200 else 'BEAR'
+        layer1_vote = _qqq_fallback()
 
     # Layer 2: 시장 폭
     if pd.isna(breadth_pct):
-        layer2_vote = 'BULL' if qqq_price > qqq_ma200 else 'BEAR'
+        layer2_vote = _qqq_fallback()
     elif breadth_pct > BREADTH_BULL:
         layer2_vote = 'BULL'
     elif breadth_pct < BREADTH_BEAR:
@@ -306,11 +325,11 @@ def main() -> None:
 
     # Layer 3: VIX/RV
     if pd.isna(vix_rv_ratio):
-        layer3_vote = 'BULL' if qqq_price > qqq_ma200 else 'BEAR'
+        layer3_vote = _qqq_fallback()
     elif VIX_RV_LOW <= vix_rv_ratio <= VIX_RV_HIGH:
         layer3_vote = 'SIDEWAYS'
     else:
-        layer3_vote = 'BULL' if qqq_price > qqq_ma200 else 'BEAR'
+        layer3_vote = _qqq_fallback()
 
     # 다수결 (2-of-3)
     votes = [layer1_vote, layer2_vote, layer3_vote]
