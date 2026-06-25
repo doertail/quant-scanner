@@ -34,7 +34,8 @@ def _load(path, default):
 
 
 def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
-                 prices: dict | None = None, megadip_lines: list | None = None) -> str:
+                 prices: dict | None = None, megadip_lines: list | None = None,
+                 risk_line: str | None = None) -> str:
     prices = prices or {}
     r = signals.get("regime", {})
     date = signals.get("date", datetime.today().strftime("%Y-%m-%d"))
@@ -48,6 +49,8 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
     vix_s = f"{vix:.1f}" if isinstance(vix, (int, float)) else "?"
     L.append(f"🌐 레짐 {r.get('market_regime','?')} | VIX {vix_s}({r.get('vix_zone','?')}) "
              f"| HYG {hyg} | 진입 A:{a} B:{b}")
+    if risk_line:
+        L.append(risk_line)
 
     # 보유
     L.append("")
@@ -146,7 +149,19 @@ def main():
     except Exception as e:
         print(f"(메가캡 섹션 생략: {e})", file=sys.stderr)
 
-    report = build_report(signals, holdings, fwd_last, prices, megadip_lines=megadip_lines)
+    # 위험등급 한 줄 (risk_briefing 재사용, best-effort)
+    risk_line = None
+    try:
+        import risk_briefing as rb
+        grades, details = rb.build_dashboard(signals.get("regime", {}),
+                                             rb.fetch_trend(), rb.fetch_yield_spread())
+        risk_line = (f"🚦 위험 {rb.grade_overall(grades)} | 추세 {details['trend']} "
+                     f"| 폭 {details['breadth']} | {details['yield_curve']}")
+    except Exception as e:
+        print(f"(위험등급 생략: {e})", file=sys.stderr)
+
+    report = build_report(signals, holdings, fwd_last, prices,
+                          megadip_lines=megadip_lines, risk_line=risk_line)
     print(report)
 
     if not args.no_send:
