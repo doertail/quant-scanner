@@ -128,7 +128,10 @@ def main():
     if not signals:
         print("signals.json 없음 — scanner_v4.py 먼저 실행", file=sys.stderr)
         return 1
-    holdings = _load(PORTFOLIO, {}).get("holdings", {})
+    pf = _load(PORTFOLIO, {})
+    holdings = pf.get("holdings", {})
+    if pf.get("cash") is not None:          # portfolio.json 현금이 더 최신 (toss_sync 갱신)
+        signals = {**signals, "portfolio_cash": pf["cash"]}
     fwd = _load(FORWARD, [])
     fwd_last = fwd[-1] if fwd else None
 

@@ -80,8 +80,11 @@ def section_lines(positions: dict, rsi: dict) -> list:
         code, desc = classify(rsi.get(t), managed=True, days_held=_days_since(info.get("entry_date")))
         mark = "🔵" if code == "EXIT" else "⚪"
         held_lines.append(f"  {mark} {t} [{code}] {desc}")
-    L.append("  관리: " + ("없음" if not held_lines else ""))
-    L += held_lines
+    if held_lines:
+        L.append("  관리:")
+        L += held_lines
+    else:
+        L.append("  관리: 없음")
     cands = [f"{t}(RSI {rsi[t]:.0f})" for t in MEGA
              if t not in (positions or {}) and classify(rsi.get(t), managed=False)[0] == "ENTRY"]
     L.append(f"  진입후보(RSI<30): {', '.join(cands) if cands else '없음'}")
