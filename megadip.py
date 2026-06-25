@@ -72,28 +72,25 @@ def fetch_rsi(tickers):
     return out
 
 
+def section_lines(positions: dict, rsi: dict) -> list:
+    """메가캡 딥 섹션 본문 라인(헤더/펜스 없음) — daily_report에서 재사용."""
+    L = ["🎯 메가캡 딥"]
+    held_lines = []
+    for t, info in (positions or {}).items():
+        code, desc = classify(rsi.get(t), managed=True, days_held=_days_since(info.get("entry_date")))
+        mark = "🔵" if code == "EXIT" else "⚪"
+        held_lines.append(f"  {mark} {t} [{code}] {desc}")
+    L.append("  관리: " + ("없음" if not held_lines else ""))
+    L += held_lines
+    cands = [f"{t}(RSI {rsi[t]:.0f})" for t in MEGA
+             if t not in (positions or {}) and classify(rsi.get(t), managed=False)[0] == "ENTRY"]
+    L.append(f"  진입후보(RSI<30): {', '.join(cands) if cands else '없음'}")
+    return L
+
+
 def build_report(positions: dict, rsi: dict) -> str:
     L = [f"🎯 **메가캡 딥 전략 {datetime.today().strftime('%Y-%m-%d')}**", "```"]
-    # 관리 포지션 (청산 모니터)
-    L.append("[관리 포지션]")
-    if positions:
-        for t, info in positions.items():
-            code, desc = classify(rsi.get(t), managed=True, days_held=_days_since(info.get("entry_date")))
-            mark = "🔵" if code == "EXIT" else "⚪"
-            L.append(f"  {mark} {t:6} {code:5} {desc}")
-    else:
-        L.append("  없음")
-    # 진입 후보 (워치리스트, 미관리)
-    cands = []
-    for t in MEGA:
-        if t in positions:
-            continue
-        code, desc = classify(rsi.get(t), managed=False)
-        if code == "ENTRY":
-            cands.append(f"{t}(RSI {rsi[t]:.0f})")
-    L.append("")
-    L.append("[진입 후보 (RSI<30)]")
-    L.append("  " + (", ".join(cands) if cands else "없음"))
+    L += section_lines(positions, rsi)[1:]   # 헤더 라인 중복 제거
     L.append("```")
     L.append("※ ABC와 별개 자문 신호. 실제 매매는 수동. 생존편향 감안 기대 ≈ QQQ+소폭.")
     return "\n".join(L)

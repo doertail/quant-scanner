@@ -34,7 +34,7 @@ def _load(path, default):
 
 
 def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
-                 prices: dict | None = None) -> str:
+                 prices: dict | None = None, megadip_lines: list | None = None) -> str:
     prices = prices or {}
     r = signals.get("regime", {})
     date = signals.get("date", datetime.today().strftime("%Y-%m-%d"))
@@ -92,6 +92,10 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
         if v is not None and q is not None:
             sign = "✅앞섬" if (edge or 0) >= 0 else "🔻뒤짐"
             L.append(f"📈 forward: 전략 ${v:,.0f} vs QQQ ${q:,.0f} (격차 {edge:+.2f} {sign})")
+    # 메가캡 딥 섹션 (ABC와 별개, 한 메시지로 통합)
+    if megadip_lines:
+        L.append("")
+        L += megadip_lines
     L.append("```")
     return "\n".join(L)
 
@@ -129,7 +133,17 @@ def main():
     fwd_last = fwd[-1] if fwd else None
 
     prices = {} if args.no_prices else fetch_prices(list(holdings.keys()))
-    report = build_report(signals, holdings, fwd_last, prices)
+
+    # 메가캡 딥 섹션 (한 메시지로 통합)
+    megadip_lines = None
+    try:
+        import megadip
+        mpos = json.loads(megadip.POSITIONS.read_text(encoding="utf-8")) if megadip.POSITIONS.exists() else {}
+        megadip_lines = megadip.section_lines(mpos, megadip.fetch_rsi(megadip.MEGA))
+    except Exception as e:
+        print(f"(메가캡 섹션 생략: {e})", file=sys.stderr)
+
+    report = build_report(signals, holdings, fwd_last, prices, megadip_lines=megadip_lines)
     print(report)
 
     if not args.no_send:
