@@ -871,8 +871,8 @@ def main() -> None:
 
     # ── 8. Gemini AI 분석 ────────────────────────────────────────────────────
     api_key = os.getenv('GEMINI_API_KEY')
-    if not api_key:
-        log.warning("GEMINI_API_KEY 미설정 — AI 분석 스킵")
+    if not api_key or not NEWS_FILTER_ENABLE:
+        log.info("Gemini 비활성(NEWS_FILTER_ENABLE=False 또는 키 없음) — AI 분석 스킵")
         send_discord(scan_text)
         _run_risk_briefing()
         return

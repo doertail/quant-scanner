@@ -82,5 +82,5 @@ EARNINGS_FILTER_ENABLE = True
 EARNINGS_BLOCK_DAYS    = 2
 
 # 뉴스 감성 필터
-NEWS_FILTER_ENABLE = True
+NEWS_FILTER_ENABLE = False    # Gemini 미사용(키 무효) — 켜려면 유효한 GEMINI_API_KEY + True
 NEWS_FILTER_TOP_N  = 5        # 전략별 상위 N개만 분석 (최대 10 Gemini 호출)
