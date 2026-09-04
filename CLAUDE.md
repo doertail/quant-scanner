@@ -33,7 +33,7 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `candidate_finders.py` | 전략 A/B/D 진입 후보 탐색 |
 | `news_filter.py` | 어닝스 캘린더 필터 (±N일 차단) + 뉴스 감성 필터 (Gemini PASS/REDUCE/SKIP) |
 | `portfolio_io.py` | portfolio.json 로드/저장 |
-| `notify.py` | Discord 웹훅 + ANSI 색 제거 |
+| `notify.py` | Discord 웹훅 + ANSI 색 제거. `send_discord(msg, env_var=...)` — 채널별 웹훅 선택, 성공 여부 반환 |
 | `toss_client.py` | 토스증권 Open API 조회 클라이언트 (`TossClient` — OAuth2 토큰 + 계좌/보유종목/예수금/현재가 조회, 읽기 전용) |
 | `account_status.py` | 토스 계좌 현황 CLI — 잔고+보유종목+예수금. `python account_status.py [--raw] [--account SEQ]` |
 | `prices.py` | 토스 현재가 조회 CLI — `python prices.py 005930 AAPL TSLA [--raw]` (계좌 불필요) |
@@ -43,13 +43,18 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `forward_test.py` | 페이퍼 forward 검증 — 토스 실시간 시세+스캐너 신호로 가상 포트폴리오 운용, 일별 평가액 + **QQQ 단순보유 벤치마크** 누적(`forward_equity.json`의 `qqq`/`edge_vs_qqq`). "전략 vs 시장" 비교 = 엣지 진짜 여부 판단. `python forward_test.py [--cash N]` |
 | `toss_order.py` | **실주문 CLI (Phase 2, 실제 돈)** — `python toss_order.py SYMBOL BUY/SELL QTY [--type LIMIT --price P] [--yes]`. 기본 드라이 프리뷰, **`--yes`로만 실제 전송**, 킬스위치·장운영 가드레일. `TossClient.create_order`(POST /api/v1/orders) 사용. 미국주식은 미국장 개장 필요. 소수점은 `--amount`(orderAmount) 사용 |
 | `daily_report.py` | 일일 기술적 요약 → 디스코드 (**LLM·비용 0**, 로컬 파일 기반). signals/portfolio/forward_equity → 레짐+보유손익(토스 시세 best-effort)+액션+forward vs QQQ. `[--no-send] [--no-prices]`. launchd(run_forward.sh)가 매일 자동 전송 |
+| `news_brief.py` | 보유·관심종목 뉴스 + **한국어 한 문장 요약** → 리포트 섹션 (키 불필요, 비용 0). 대상 = `portfolio.json` 보유 + `watchlist.json`. **중요도 = 당일 등락률 절대값**(많이 움직인 종목 먼저, 자리 부족하면 덜 움직인 것부터 잘림). 소스: 미국=yfinance / 한국=네이버 금융 종목뉴스(회사명 없는 시황기사는 버림). 요약=**로컬 Ollama `exaone3.5`**(외부 전송 없음, 꺼져 있으면 원문 발췌로 폴백). 코드블록 **밖**에 붙여야 링크가 눌린다. `python news_brief.py [--hours N] [--no-llm]` |
+| ↳ 동반 이동 | 3종목 이상이 같은 방향 2.5%↑ → 개별 뉴스 대신 한 줄로 묶고 **코스피 대비** 표기(섹터만인지 시장 전체인지). 설명 기사는 버렸던 시황 기사에서 찾되 **Ollama가 '이 기사가 그 방향 움직임을 설명하나' 판정**해서 통과한 것만 붙인다. 못 찾으면 억지로 안 붙이고 '못 찾음'이라고 말한다 |
+| ↳ 커버리지 | 마지막 `📋` 줄이 **안 보이는 종목의 이유**를 밝힌다(`자리부족` vs `뉴스없음`). 관심종목 전부가 개별뉴스·동반이동·이 줄 중 하나로 설명된다 |
+| `add_news_webhook.sh` | `#경제` 웹훅을 `.env`에 등록(.gitignore). **클립보드에서 읽는다** — 웹훅 URL을 채팅·명령줄에 노출하지 않기 위함. 등록 전 실제 전송 테스트 |
 | `megadip.py` | **메가캡 딥 전략 모니터 (ABC와 별개 자문)** — 검증: backtest_megacap_dip(QQQ+1%p, 생존편향). 진입 RSI<30 / 청산 RSI>50 또는 120일. 관리 포지션은 `megadip.json`(.gitignore, 예: MSFT). 워치리스트=메가캡 12종. 디스코드 신호, launchd 자동. 실매매는 수동 |
 
 ### 데이터
 | 파일 | 역할 |
 |------|------|
 | `portfolio.json` | 현재 포지션 상태 (production 데이터 — 직접 수정 주의, .gitignore) |
-| `external_holdings.json` | 국내 등 외부 보유 (toss_sync가 분리 관리, .gitignore) |
+| `external_holdings.json` | 국내 등 외부 보유 (toss_sync가 분리 관리, .gitignore). ⚠️ 토스 응답에 국내분이 0건이면 toss_sync가 **덮어쓰지 않는다** — 전량매도로 비우려면 직접 편집 |
+| `watchlist.json` | 관심종목 `{"티커": "표시이름"}`. 뉴스 대상 = 보유 + 이 목록. 토스 API에 관심종목이 없어 수동 관리. **한국 종목은 `.KS` 접미사 필수**(`105560.KS`=KB금융) — yfinance 규칙. 티커만 있는 배열도 받음 |
 | `signals.json` | 최근 스캔 결과 (.gitignore) |
 | `forward_equity.json` | forward 페이퍼 일별 성과 + QQQ 벤치마크 (.gitignore) |
 | `forward_paper.json` | forward 페이퍼 포트폴리오 상태 (.gitignore) |
@@ -97,7 +102,10 @@ python toss_order.py QQQM BUY --amount 850 --yes     # 금액기반(소수점) �
 ## 환경 변수 (.env)
 
 ```
-DISCORD_WEBHOOK_URL=...   # scanner_v4.py — Discord 알림
+DISCORD_WEBHOOK_URL=...   # scanner_v4.py + daily_report.py 리포트 — Discord 알림
+DISCORD_NEWS_WEBHOOK_URL=...  # 관심 뉴스 전용(#경제). 있으면 뉴스를 별도 메시지로 분리 발송,
+                              # 없으면 리포트 뒤에 붙임(자리 부족해서 2~3건만 들어감).
+                              # 등록은 `zsh add_news_webhook.sh` (클립보드에서 읽음)
 DISCORD_TOKEN=...         # bot.py — Discord 봇 토큰
 GEMINI_API_KEY=...        # 뉴스 감성 필터 (gemini-2.5-flash)
 APCA_API_KEY_ID=...       # execution_layer.py — Alpaca Paper API
@@ -118,6 +126,8 @@ TOSS_CLIENT_SECRET=...
 - **`TossClient` 메서드 (구현·검증 완료)**: 조회 `get_accounts` · `get_holdings` · `get_buying_power` · `get_prices` · `get_orderbook` · `get_price_limits` · `get_exchange_rate` · `get_sellable_quantity` · `get_commissions` · `get_stocks` · `get_stock_warnings` · `get_market_calendar` · `get_candles` / 주문 `create_order` (+`build_order_body` 순수)
 - 키 발급 시 주의: ① OAuth2 클라이언트 활성화 ② **IP allowlist 등록 필수**(미등록 시 403) ③ 동적 IP면 변경 시 재등록 ④ 주문은 별도 권한 — 400 `invalid-request`면 정상 권한, 403이면 권한 없음
 - 공식 문서: developers.tossinvest.com / 스펙: openapi.tossinvest.com/openapi-docs/latest/openapi.json
+- ❌ **관심종목(watchlist) 엔드포인트는 없다** — 2026-09-04 공식 스펙 확인, 총 33개 경로에 없음(`watchlist`/`interests`/`favorites` 계열 전부 404). 관심종목은 앱 전용 기능이라 `watchlist.json`으로 수동 관리한다. 다시 찾지 말 것
+- 미사용 엔드포인트(필요하면 여기부터): `/rankings`(인기·등락 순위) · `/trades` · `/stocks/all` · `/market-indicators/*` · `/conditional-orders`(예약주문) · `/stocks/{symbol}/short-selling`·`investor-trading`·`program-trades`
 
 **진행 상태**:
 - ✅ 1) 계좌·예수금·시세 조회  ✅ 2) 전체 조회 API + 주문 직전 점검(`order_preflight`)  ✅ 3) **주문 실행**(`create_order`/`toss_order.py`) — **첫 실거래 완료** (PPL 매도, QQQM 매수)

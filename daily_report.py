@@ -5,12 +5,17 @@ scanner_v4의 signals.json + portfolio.json + forward_equity.json(로컬)을 읽
 한눈에 보는 요약을 디스코드로 보낸다. 펀더멘털·서술 없음 — 기술적 전략에 맞춘
 "레짐 + 보유신호 + 액션 + forward vs QQQ"만. 보유 손익은 토스 실시간가로 best-effort.
 
+보유·관심종목 뉴스는 news_brief.py가 붙인다(yfinance+네이버, 요약은 로컬 Ollama, 키 불필요).
+DISCORD_NEWS_WEBHOOK_URL이 있으면 뉴스는 #경제로 분리 발송된다.
+
 사용: python daily_report.py            # 리포트 생성 + 디스코드 전송
       python daily_report.py --no-send  # 콘솔만 (전송 안 함)
+      python daily_report.py --no-news  # 뉴스 섹션 빼고
 """
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +29,8 @@ SIGNALS = BASE_DIR / "signals.json"
 PORTFOLIO = BASE_DIR / "portfolio.json"
 FORWARD = BASE_DIR / "forward_equity.json"
 RESERVE_USD = 1250  # VIX 공포 예비탄 (참고 표시용)
+DISCORD_SAFE_LEN = 1900  # notify.send_discord의 청크 크기 — 넘으면 2통으로 쪼개진다
+NEWS_WEBHOOK_ENV = "DISCORD_NEWS_WEBHOOK_URL"  # 설정되면 뉴스를 #경제로 분리 발송
 
 
 def _load(path, default):
@@ -125,6 +132,7 @@ def main():
     ap = argparse.ArgumentParser(description="일일 기술적 리포트 → 디스코드")
     ap.add_argument("--no-send", action="store_true", help="콘솔만 (전송 안 함)")
     ap.add_argument("--no-prices", action="store_true", help="시세 조회 생략(빠름)")
+    ap.add_argument("--no-news", action="store_true", help="뉴스 섹션 생략")
     args = ap.parse_args()
 
     signals = _load(SIGNALS, {})
@@ -162,12 +170,36 @@ def main():
 
     report = build_report(signals, holdings, fwd_last, prices,
                           megadip_lines=megadip_lines, risk_line=risk_line)
+
+    # 뉴스: 전용 웹훅(#경제)이 있으면 그쪽으로 **따로** 보낸다.
+    # 그래야 1900자를 리포트와 나눠 쓰지 않아서 요약까지 붙은 기사를 여러 건 실을 수 있다.
+    # 없으면 예전처럼 리포트 뒤에 붙인다(남는 글자수만큼만 — 2통으로 쪼개지면 안 되니까).
+    # 뉴스는 코드블록 **밖**이어야 링크가 눌린다.
+    news_lines = None
+    if not args.no_news:
+        separate = bool(os.getenv(NEWS_WEBHOOK_ENV))
+        try:
+            import news_brief
+            news_lines = news_brief.build_section(
+                budget=DISCORD_SAFE_LEN - (0 if separate else len(report) + 2))
+            if news_lines and not separate:
+                report += "\n\n" + "\n".join(news_lines)
+                news_lines = None          # 본문에 이미 들어감
+        except Exception as e:
+            print(f"(뉴스 섹션 생략: {e})", file=sys.stderr)
     print(report)
+
+    if news_lines:
+        print("\n" + "\n".join(news_lines))
 
     if not args.no_send:
         from notify import send_discord
         send_discord(report)
-        print("📤 디스코드 전송 완료")
+        print("📤 디스코드 전송 완료 (리포트)")
+        if news_lines:
+            ok = send_discord("\n".join(news_lines), env_var=NEWS_WEBHOOK_ENV,
+                              username="관심 뉴스")
+            print("📰 뉴스 전송 완료 (#경제)" if ok else "⚠️ 뉴스 전송 실패 — 리포트만 나감")
     return 0
 
 
