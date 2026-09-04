@@ -185,10 +185,17 @@ def main() -> int:
         with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
             json.dump(new_port, f, indent=2, ensure_ascii=False)
         print(f"💾 저장: {PORTFOLIO_FILE}")
-        # 외부 보유(국내 등)는 스캐너가 건드리지 않는 별도 파일로
-        with open(EXTERNAL_FILE, "w", encoding="utf-8") as f:
-            json.dump(report["external"], f, indent=2, ensure_ascii=False)
-        print(f"💾 외부 보유: {EXTERNAL_FILE} ({len(report['external'])}종목)")
+        # 외부 보유(국내 등)는 스캐너가 건드리지 않는 별도 파일로.
+        # 단 토스가 국내 종목을 0건으로 주면 덮어쓰지 않는다 — 실제 전량매도인지
+        # 응답에 국내분이 안 실린 건지 구분할 수 없어서다. 빈 결과로 기존 기록을
+        # 날리면 조용히 유실된다(2026-09-04에 TIGER 472150이 이렇게 지워졌음).
+        # 전량매도로 비우려면 파일을 직접 편집할 것.
+        if report["external"]:
+            with open(EXTERNAL_FILE, "w", encoding="utf-8") as f:
+                json.dump(report["external"], f, indent=2, ensure_ascii=False)
+            print(f"💾 외부 보유: {EXTERNAL_FILE} ({len(report['external'])}종목)")
+        else:
+            print(f"⏭️  외부 보유: 토스 국내분 0건 → {EXTERNAL_FILE} 유지(덮어쓰지 않음)")
     else:
         print("\n(미리보기였음 — 실제 반영하려면 --apply)")
 
