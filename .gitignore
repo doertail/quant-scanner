@@ -28,3 +28,6 @@ forward_launchd.out
 forward_launchd.err
 megadip.json
 execution.log
+
+# btlib이 받아두는 ^IRX 무위험수익률 캐시 (재생성 가능)
+backtest/.irx_cache.csv

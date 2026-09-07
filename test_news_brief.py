@@ -438,3 +438,51 @@ def test_naver_parses_title_press_link_and_entities(monkeypatch):
     # finance.naver.com의 news_read는 JS 리다이렉트라 실제 기사 주소로 바꿔 쓴다
     assert out[0]["url"] == "https://n.news.naver.com/mnews/article/2/1"
     assert out[0]["ticker"] == "105560.KS"
+
+
+# ─── 시장 섹션 (Alpha Vantage) ──────────────────────────────────────────────
+
+def _av(title, source, topics, url=None):
+    return {"title": title, "url": url or f"https://ex.com/{title[:8]}", "source": source,
+            "summary": "body", "topics": [{"topic": k, "relevance_score": str(v)}
+                                          for k, v in topics.items()]}
+
+
+def _av_resp(monkeypatch, feed):
+    """토픽별 호출 3번 모두 같은 feed를 준다 — 중복 제거까지 함께 검증된다."""
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"feed": feed}
+    monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "k")
+    monkeypatch.setattr("requests.get", lambda *a, **k: R())
+
+
+def test_macro_ranks_by_topic_score_and_drops_13f_spam(monkeypatch):
+    _av_resp(monkeypatch, [
+        _av("13F filing: Fund has stake in JPM", "MarketBeat", {"financial_markets": 0.9}),
+        _av("Weak headline", "Yahoo", {"financial_markets": 0.4}),
+        _av("Fed rate decision moves markets", "Reuters",
+            {"economy_monetary": 0.9, "financial_markets": 0.8}),
+    ])
+    out = nb.fetch_macro()
+    assert [i["publisher"] for i in out] == ["Reuters", "Yahoo"]   # 점수순, MarketBeat 제외
+
+
+def test_macro_dedupes_same_story_and_ignores_foreign_topics(monkeypatch):
+    _av_resp(monkeypatch, [
+        # 같은 기사가 URL만 다르게 두 번 — 앞 40자로 잡는다
+        _av("Fed holds rates steady as inflation cools further", "A",
+            {"economy_monetary": 0.9}, url="https://ex.com/1"),
+        _av("Fed holds rates steady as inflation cools further today", "B",
+            {"economy_monetary": 0.9}, url="https://ex.com/2"),
+        # 요청하지 않은 토픽은 점수에 안 들어간다 (0점이라 뒤로)
+        _av("Retail earnings roundup", "C", {"earnings": 1.0, "manufacturing": 1.0}),
+    ])
+    out = nb.fetch_macro()
+    assert [i["publisher"] for i in out] == ["A", "C"]
+
+
+def test_macro_without_key_is_silent(monkeypatch):
+    monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
+    assert nb.fetch_macro() == []
+    assert nb.macro_lines() == []

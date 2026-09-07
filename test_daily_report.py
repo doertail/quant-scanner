@@ -36,3 +36,14 @@ def test_report_no_action_when_empty():
 def test_report_handles_missing_forward():
     r = dr.build_report(SIG, HOLD, None)
     assert "일일 리포트" in r   # forward 없어도 안 깨짐
+
+
+def test_stale_warning():
+    from datetime import datetime, timedelta
+    import daily_report as dr
+    today = datetime.today()
+    assert dr.stale_warning(today.strftime("%Y-%m-%d")) == ""
+    assert dr.stale_warning((today - timedelta(days=3)).strftime("%Y-%m-%d")) == ""   # 화요일 아침 = 토요일치
+    assert "낡았다" in dr.stale_warning((today - timedelta(days=4)).strftime("%Y-%m-%d"))
+    assert "60일 전" in dr.stale_warning((today - timedelta(days=60)).strftime("%Y-%m-%d"))
+    assert "불명" in dr.stale_warning("어제")

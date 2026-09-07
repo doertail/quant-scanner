@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 from toss_client import TossClient, TossAPIError
 # DRY: 검증된 순수 안전장치/사이징 함수 재사용
 from execution_layer import check_price_sanity, count_positions_by_strategy, calc_shares
+import signals_io
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / '.env')
@@ -220,8 +221,10 @@ def main():
         signals = json.loads(SIGNALS_FILE.read_text(encoding='utf-8'))
     except FileNotFoundError:
         log.error('signals.json 없음 — scanner_v4.py 먼저 실행'); sys.exit(1)
-    if signals.get('date') != datetime.today().strftime('%Y-%m-%d'):
-        log.warning(f"signals.json 날짜 불일치({signals.get('date')}) — 오래된 신호일 수 있음")
+    # 날짜≠오늘은 화~토 스캔에선 정상(월요일엔 토요일치). 진짜 낡았을 때만 짖는다.
+    if signals_io.describe(signals.get('date')):
+        log.warning(f"⚠️ signals.json {signals_io.describe(signals.get('date'))}"
+                    f"({signals.get('date')}) — 낡은 신호로 주문한다")
 
     try:
         portfolio = json.loads(PORTFOLIO_FILE.read_text(encoding='utf-8')).get('holdings', {})

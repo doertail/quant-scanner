@@ -9,6 +9,14 @@ All scripts are in `backtest/` and can be reproduced:
 python backtest/backtest_<name>.py
 ```
 
+> **Sharpe basis changed 2026-09-07.** `calc_stats` moved to `backtest/btlib.py` and now
+> uses the realised `^IRX` risk-free series instead of a flat 3.5%; slippage now scales
+> with VIX. **Only section 5 has been re-run on the new basis.** Sections **4** and **10**
+> still report the old flat-3.5% Sharpe/Sortino and are *not* comparable to section 5 —
+> re-run `backtest_crypto_momentum.py`, `backtest_robustness.py` and `backtest_improve.py`
+> to refresh them. CAGR, MDD, win rate and mean-return figures are unaffected by the
+> risk-free change (though VIX-scaled slippage will move them slightly).
+
 ---
 
 ## 1. Earnings Filter Effect (`backtest_earnings_ablation.py`)
@@ -86,6 +94,9 @@ high-VIX dislocations and exit on fear normalization.
 
 ## 4. Crypto Momentum + BTC Regime Filter (`backtest_crypto_momentum.py`)
 
+> ⚠️ Sharpe/Sortino below are on the **old flat-3.5% risk-free basis** (not re-run since 2026-09-07).
+
+
 **Question**: Does a momentum strategy on crypto-related stocks (MSTR, BLOK, MARA,
 RIOT, COIN, BITO) work? Does adding a "BTC > MA50" regime gate help?
 
@@ -122,27 +133,35 @@ the same trigger (VIX > 30 upcross); only the exit rule varies.
 
 ### Result
 
-| Exit rule | Final | CAGR | MDD | Sharpe | Trades | Win rate | Avg P/L | Avg hold |
-|---|---|---|---|---|---|---|---|---|
-| **C: VIX<20 (default)** | $171K | +2.55% | −15.62% | −0.17 | 36 | **97.2%** | +8.98% | 92d |
-| D: RSI≥70 | $163K | +2.32% | −19.67% | −0.21 | 38 | 86.8% | +7.78% | 128d |
-| E: ATR×3 trail | $157K | +2.15% | −18.35% | −0.21 | 84 | 48.8% | +3.29% | 51d |
-| H: VIX<20 OR +20% gain | $171K | +2.56% | −15.62% | −0.17 | 39 | 97.4% | +8.20% | 85d |
-| **I: Panic-buy + hold forever** | **$500K** | **+7.83%** | −24.78% | **+0.42** | — | — | — | — |
-| [Benchmark] SPY+QQQ B&H | **$1,006K** | **+11.42%** | −43.47% | **+0.52** | — | — | — | full |
+Re-run 2026-09-07 (window 2005-01-03 → 2026-09-04, 5,453 trading days).
+"Underwater" = longest stretch below the prior equity peak — the wait, not the depth.
 
-### Macro context (5,380 trading days)
-- Regime distribution: BULL 47.8% / SIDEWAYS 32.1% / BEAR 20.2%
-- VIX distribution: NORMAL 67.2% / SWEET 16.5% / DANGER 8.0% / PANIC 8.3%
-- Strategy A blocked: 14.6% of days. Strategy B blocked: 57.3% of days (sideways and bear).
+| Exit rule | Final | CAGR | MDD | Underwater | Sharpe | Trades | Win rate | Avg P/L | Avg hold |
+|---|---|---|---|---|---|---|---|---|---|
+| **C: VIX<20 (default)** | $169K | +2.45% | −15.60% | **2.4y** | 0.158 | 36 | **97.2%** | +8.98% | 92d |
+| D: RSI≥70 | $160K | +2.21% | −19.65% | **7.7y** | 0.110 | 38 | 86.8% | +7.78% | 128d |
+| E: ATR×3 trail | $149K | +1.86% | −19.19% | 3.8y | 0.044 | 86 | 50.0% | +3.70% | 51d |
+| F: VIX<20 + MA50 | $166K | +2.37% | −15.60% | 2.4y | 0.141 | 34 | 97.1% | +9.18% | 99d |
+| G: split (50% VIX / ATR rest) | $150K | +1.89% | −18.40% | 3.4y | 0.049 | 118 | 63.6% | +5.01% | 46d |
+| H: VIX<20 OR +20% gain | $169K | +2.45% | −15.60% | 2.4y | 0.159 | 39 | 97.4% | +8.20% | 85d |
+| **I: Panic-buy + hold forever** | **$510K** | **+7.82%** | −24.77% | 3.3y | **0.564** | — | — | — | — |
+| [Benchmark] SPY+QQQ B&H | **$1,034K** | **+11.40%** | −43.47% | 3.5y | **0.622** | — | — | — | full |
+
+Full combined portfolio (A+B+C): $640K, CAGR +8.96%, MDD −32.07%
+(underwater 864 trading days ≈ 3.4y), Sharpe 0.524, Sortino 0.616, 3,574 trades, 76.0% win.
+
+### Macro context (5,453 trading days)
+- Regime distribution: BULL 48.2% / SIDEWAYS 31.8% / BEAR 20.0%
+- VIX distribution: NORMAL 67.5% / SWEET 16.3% / DANGER 7.9% / PANIC 8.2%
+- Strategy A blocked: 14.5% of days. Strategy B blocked: 56.8% of days (sideways and bear).
 
 ### Honest interpretation
 
 The "97% win rate" headline for Strategy C is real **on a per-trade basis** — but the
 trade gives back its edge when capital sits idle waiting for the next VIX > 30 event.
-Across a full window, simply holding SPY+QQQ produces ~4× the final capital.
+Across a full window, simply holding SPY+QQQ produces ~6× the final capital.
 
-Two takeaways:
+Three takeaways:
 
 1. **Strategy C is a tactical overlay, not a standalone replacement for buy-and-hold.**
    Its real role is *adding* panic-buy positions on top of a core long position — not
@@ -151,8 +170,21 @@ Two takeaways:
    never sell.** Higher CAGR than the timed exits, with the trade-off of bigger
    drawdown. That contradicts the original "VIX < 20 exit" rationale and suggests the
    exit rule may be leaving alpha on the table.
+3. **Underwater duration separates C from D in a way depth does not.** Their max
+   drawdowns are close (−15.6% vs −19.7%), but D leaves you below your prior peak for
+   **7.7 years** against C's 2.4. Anything that exits on RSI rather than on fear
+   normalising re-enters too early and stays stuck. This column did not exist before
+   2026-09-07 and is the strongest argument yet for the VIX-based exit.
 
 These are uncomfortable findings, but they're more useful published than hidden.
+
+> **Changed 2026-09-07.** Earlier revisions of this table reported *negative* Sharpe
+> (C −0.17, benchmark +0.52) because the risk-free rate was hardcoded to a flat 3.5%
+> across 2005–2026 — a period whose actual 13-week T-bill rate ranged from 0.01%
+> (2021) to 5.24% (2024). Sharpe/Sortino now use the realised `^IRX` series, and
+> slippage now scales with VIX (see `btlib.py`). The sign flip is the RFR fix; the
+> ~0.1pp CAGR decline is the slippage fix. The window also grew by ~73 trading days,
+> so row-by-row deltas against older revisions mix all three causes.
 
 ---
 
@@ -410,6 +442,9 @@ are private, not in the data, and not backtested.
 ---
 
 ## 10. Robustness & Survivorship Decomposition (`backtest_robustness.py`, `backtest_validation.py`)
+
+> ⚠️ Sharpe figures below are on the **old flat-3.5% risk-free basis** (not re-run since 2026-09-07).
+
 
 **Question**: Across different market eras, does the full A+B+C+D+DCA system beat naive
 buy-and-hold — and *which* sleeve actually drives the outperformance? Is the edge real

@@ -32,7 +32,8 @@ def get_sp500_tickers() -> list[str]:
 
 def get_nasdaq100_tickers() -> list[str]:
     resp = requests.get(
-        'https://en.wikipedia.org/wiki/Nasdaq-100',
+        # 2026-07-10 구성종목 표가 Nasdaq-100 본문에서 이 문서로 분리됐다.
+        'https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies',
         headers=_HEADERS, timeout=15,
     )
     resp.raise_for_status()

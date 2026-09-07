@@ -49,14 +49,19 @@ def vol_target(r: pd.Series, target_ann: float, lookback=60) -> tuple:
     return eq, L
 
 
+_DATES = None   # main에서 1회 설정. 6개 stats() 호출이 전부 같은 날짜축을 쓴다.
+
+
 def stats(equity):
-    return bt.calc_stats(equity, INIT, [])
+    return bt.calc_stats(equity, INIT, [], dates=_DATES)
 
 
 def main():
+    global _DATES
     ctx = bv.setup()
     full = [d for d in ctx["all_dates"]
             if pd.Timestamp("2005-01-01") <= d <= pd.Timestamp("2026-12-31")]
+    _DATES = full
     res = bv.run(ctx, full)
     strat_eq = res["equity"]
 

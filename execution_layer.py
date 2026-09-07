@@ -33,6 +33,7 @@ from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+import signals_io
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / '.env')
@@ -322,8 +323,9 @@ def main() -> None:
     sig_date         = signals.get('date', '')
     holdings, portfolio_cash = load_portfolio()
 
-    if sig_date != datetime.today().strftime('%Y-%m-%d'):
-        log.warning(f'signals.json 날짜 불일치: {sig_date} ≠ 오늘 — 오래된 신호일 수 있음')
+    # 날짜≠오늘은 화~토 스캔에선 정상(월요일엔 토요일치). 진짜 낡았을 때만 짖는다.
+    if signals_io.describe(sig_date):
+        log.warning(f'⚠️ signals.json {signals_io.describe(sig_date)}({sig_date}) — 낡은 신호로 주문한다')
 
     regime  = signals.get('regime', {})
     exits   = signals.get('exits', [])

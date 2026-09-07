@@ -23,6 +23,8 @@ import pandas as pd
 import requests
 import yfinance as yf
 
+from btlib import calc_stats, total_cost
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s  %(levelname)s  %(message)s',
@@ -36,8 +38,9 @@ END          = datetime.today().strftime('%Y-%m-%d')
 INITIAL_CASH = 100_000.0
 COMMISSION   = 0.0005          # 0.05% per side
 SLIPPAGE     = 0.0005          # 0.05% slippage
-TOTAL_COST   = COMMISSION + SLIPPAGE
-RISK_FREE_RATE = 0.035
+TOTAL_COST   = COMMISSION + SLIPPAGE   # VIX≤20 기준값. 실제 비용은 total_cost(vix)
+RISK_FREE_RATE = 0.035         # backtest_voltarget의 차입비용 가정용으로만 남긴다.
+                               # Sharpe/Sortino는 btlib이 ^IRX 실측을 쓴다.
 
 # 포지션 사이징
 RISK_PER_TRADE    = 0.01       # 손절 시 전체 자산의 1% 손실
@@ -210,33 +213,6 @@ def precompute_momentum_ranks(
     rs_df      = ret_3m.subtract(qqq_ret_3m, axis=0)    # 상대강도 (종목 - QQQ)
 
     return rank_df, rs_df
-
-
-# ─── 통계 계산 ─────────────────────────────────────────────────────────────────
-
-def calc_stats(equity_series: list, initial: float, trades: list) -> dict:
-    if len(equity_series) < 2:
-        return {k: 0 for k in ['final', 'ret', 'cagr', 'mdd', 'sharpe', 'sortino', 'calmar', 'n', 'wins', 'wr']}
-    final   = equity_series[-1]
-    ret     = (final - initial) / initial * 100
-    years   = len(equity_series) / 252.0
-    cagr    = ((final / initial) ** (1 / years) - 1) * 100 if years > 0 else 0
-    rets    = pd.Series(equity_series).pct_change().dropna()
-    avg_r   = rets.mean() * 252
-    std_r   = rets.std()  * np.sqrt(252)
-    sharpe  = (avg_r - RISK_FREE_RATE) / std_r if std_r > 0 else 0
-    dn_r    = rets[rets < 0].std() * np.sqrt(252)
-    sortino = (avg_r - RISK_FREE_RATE) / dn_r if dn_r > 0 else 0
-    pv      = pd.Series(equity_series)
-    mdd     = ((pv - pv.cummax()) / pv.cummax()).min() * 100
-    calmar  = cagr / abs(mdd) if mdd != 0 else 0
-    wins    = sum(1 for t in trades if t[1] > t[0])
-    wr      = wins / len(trades) * 100 if trades else 0.0
-    return dict(
-        final=final, ret=ret, cagr=cagr, mdd=mdd,
-        sharpe=sharpe, sortino=sortino, calmar=calmar,
-        n=len(trades), wins=wins, wr=wr,
-    )
 
 
 # ─── 국면 시리즈 빌드 ─────────────────────────────────────────────────────────
@@ -421,6 +397,7 @@ def run_vix_panic_variant(
         reg      = regime_df.loc[date]
         vix_zone = str(reg['vix_zone'])
         vix      = float(reg['vix']) if pd.notna(reg['vix']) else float('nan')
+        tc       = total_cost(vix)      # 패닉일수록 스프레드가 벌어진다
 
         # ── 청산 ──────────────────────────────────────────────────────────
         for t in list(positions.keys()):
@@ -470,7 +447,7 @@ def run_vix_panic_variant(
                 # TP1: VIX < 20 → 50% 청산
                 if not pos.get('half_sold') and not np.isnan(vix) and vix < exit_config['vix_threshold']:
                     half = pos['shares'] * 0.5
-                    cash += half * price * (1 - TOTAL_COST)
+                    cash += half * price * (1 - tc)
                     trades.append({'ep': pos['entry_price'], 'xp': price,
                                    'ed': pos['entry_date'],  'xd': date})
                     pos['shares']   -= half
@@ -484,7 +461,7 @@ def run_vix_panic_variant(
                                or pnl >= exit_config['pct'])
 
             if should_exit and t in positions:
-                cash += pos['shares'] * price * (1 - TOTAL_COST)
+                cash += pos['shares'] * price * (1 - tc)
                 trades.append({'ep': pos['entry_price'], 'xp': price,
                                'ed': pos['entry_date'],  'xd': date})
                 del positions[t]
@@ -498,8 +475,8 @@ def run_vix_panic_variant(
                 if not price:
                     continue
                 alloc  = cash * position_pct / 100
-                shares = alloc * (1 - TOTAL_COST) / price
-                cost   = shares * price * (1 + TOTAL_COST)
+                shares = alloc * (1 - tc) / price
+                cost   = shares * price * (1 + tc)
                 if cash < cost or cost <= 0:
                     continue
                 pos = {
@@ -529,7 +506,8 @@ def run_vix_panic_variant(
         eq_hist.append(cash + port_val)
 
     # ── 통계 ───────────────────────────────────────────────────────────────
-    stats     = calc_stats(eq_hist, initial_cash, [(t['ep'], t['xp']) for t in trades])
+    stats     = calc_stats(eq_hist, initial_cash, [(t['ep'], t['xp']) for t in trades],
+                           dates=all_dates)
     pnl_pcts  = [(t['xp'] - t['ep']) / t['ep'] * 100 for t in trades]
     wins      = [t for t in trades if t['xp'] > t['ep']]
     losses    = [t for t in trades if t['xp'] <= t['ep']]
@@ -579,6 +557,7 @@ def run_backtest(
         vix_zone = str(reg['vix_zone'])
         vix      = float(reg['vix']) if pd.notna(reg['vix']) else float('nan')
         dca      = float(reg['dca'])
+        tc       = total_cost(vix)      # 패닉일수록 스프레드가 벌어진다
 
         total_eq = cash + _portfolio_value(
             positions_a, positions_b, {**positions_c, **positions_d},
@@ -591,7 +570,7 @@ def run_backtest(
                 price = _get_price(etf_data, t, date)
                 if price:
                     pos   = positions_c.pop(t)
-                    cash += pos['shares'] * price * (1 - TOTAL_COST)
+                    cash += pos['shares'] * price * (1 - tc)
                     trades_c.append((pos['entry_price'], price, pos['entry_date'], date))
 
         # ── 전략 D: 청산 (RSI >= 70) ─────────────────────────────────────────
@@ -607,7 +586,7 @@ def run_backtest(
                 price = _get_price(etf_data, t, date)
                 if price:
                     pos   = positions_d.pop(t)
-                    cash += pos['shares'] * price * (1 - TOTAL_COST)
+                    cash += pos['shares'] * price * (1 - tc)
                     trades_d.append((pos['entry_price'], price, pos['entry_date'], date))
 
         # ── 전략 A: 청산 ────────────────────────────────────────────────────
@@ -630,14 +609,14 @@ def run_backtest(
             # TP1: RSI >= 50 → 50% 익절
             if rsi >= A_RSI_PARTIAL and not pos['half_sold']:
                 half  = pos['shares'] * 0.5
-                cash += half * close * (1 - TOTAL_COST)
+                cash += half * close * (1 - tc)
                 trades_a.append((pos['entry_price'], close, pos['entry_date'], date))
                 pos['shares']   -= half
                 pos['half_sold'] = True
 
             # STOP 또는 TP2 (MA20 도달)
             if close <= pos['trailing_stop'] or close >= ma20:
-                cash += pos['shares'] * close * (1 - TOTAL_COST)
+                cash += pos['shares'] * close * (1 - tc)
                 trades_a.append((pos['entry_price'], close, pos['entry_date'], date))
                 del positions_a[t]
 
@@ -657,7 +636,7 @@ def run_backtest(
             pos['trailing_stop'] = max(pos['trailing_stop'], close - atr * B_ATR_MULT)
 
             if close <= pos['trailing_stop'] or close < ma50:
-                cash += pos['shares'] * close * (1 - TOTAL_COST)
+                cash += pos['shares'] * close * (1 - tc)
                 trades_b.append((pos['entry_price'], close, pos['entry_date'], date))
                 del positions_b[t]
 
@@ -683,7 +662,7 @@ def run_backtest(
                 shares   = risk_amt / stop_dist
                 max_sh   = (total_eq * MAX_CAP_PER_STOCK) / float(r['Close'])
                 shares   = min(shares, max_sh)
-                cost     = shares * float(r['Close']) * (1 + TOTAL_COST)
+                cost     = shares * float(r['Close']) * (1 + tc)
                 if cash >= cost > 0:
                     positions_a[t] = {
                         'shares':        shares,
@@ -726,7 +705,7 @@ def run_backtest(
                 shares   = risk_amt / stop_dist
                 max_sh   = (total_eq * MAX_CAP_PER_STOCK) / float(r['Close'])
                 shares   = min(shares, max_sh)
-                cost     = shares * float(r['Close']) * (1 + TOTAL_COST)
+                cost     = shares * float(r['Close']) * (1 + tc)
                 if cash >= cost > 0:
                     positions_b[t] = {
                         'shares':        shares,
@@ -745,8 +724,8 @@ def run_backtest(
                 if not price:
                     continue
                 alloc  = cash * C_POSITION_PCT / 100
-                shares = alloc * (1 - TOTAL_COST) / price
-                cost   = shares * price * (1 + TOTAL_COST)
+                shares = alloc * (1 - tc) / price
+                cost   = shares * price * (1 + tc)
                 if cash >= cost > 0:
                     positions_c[t] = {'shares': shares, 'entry_price': price, 'entry_date': date}
                     cash -= cost
@@ -760,8 +739,8 @@ def run_backtest(
                 if not price:
                     continue
                 alloc  = cash * D_POSITION_PCT / 100
-                shares = alloc * (1 - TOTAL_COST) / price
-                cost   = shares * price * (1 + TOTAL_COST)
+                shares = alloc * (1 - tc) / price
+                cost   = shares * price * (1 + tc)
                 if cash >= cost > 0:
                     positions_d[t] = {'shares': shares, 'entry_price': price, 'entry_date': date}
                     cash -= cost
@@ -770,7 +749,7 @@ def run_backtest(
         if date in qqqm_df.index:
             p = float(qqqm_df.loc[date, 'Close'])
             if p > 0:
-                qqqm_shares        += dca * (1 - TOTAL_COST) / p
+                qqqm_shares        += dca * (1 - tc) / p
                 total_invested_dca += dca
 
         # ── 일별 자산 기록 ───────────────────────────────────────────────────
@@ -820,7 +799,8 @@ def run_backtest(
         }
 
     return {
-        'main': calc_stats(eq_hist, INITIAL_CASH, trades_a + trades_b + trades_c + trades_d),
+        'main': calc_stats(eq_hist, INITIAL_CASH, trades_a + trades_b + trades_c + trades_d,
+                           dates=all_dates),
         'equity': eq_hist,   # 일별 자산곡선 (len == all_dates) — 레버리지/벤치마크 분석용
         'A':    _trade_stats(trades_a),
         'B':    _trade_stats(trades_b),
@@ -921,7 +901,7 @@ def main():
     print(f"    초기 자산   : ${INITIAL_CASH:>15,.0f}")
     print(f"    최종 자산   : ${m['final']:>15,.0f}    (총 수익률 {m['ret']:+.1f}%)")
     print(f"    CAGR        : {m['cagr']:>+.2f}%")
-    print(f"    MDD         : {m['mdd']:.2f}%")
+    print(f"    MDD         : {m['mdd']:.2f}%  (최장 언더워터 {m['mdd_days']}거래일 ≈ {m['mdd_days']/252:.1f}년)")
     print(f"    Sharpe      : {m['sharpe']:.3f}")
     print(f"    Sortino     : {m['sortino']:.3f}")
     print(f"    Calmar      : {m['calmar']:.3f}")
@@ -1021,7 +1001,7 @@ def main():
             for t in bnh_etf
         )
         bnh_hist.append(val)
-    bnh_stats = calc_stats(bnh_hist, PANIC_CASH, [])
+    bnh_stats = calc_stats(bnh_hist, PANIC_CASH, [], dates=all_dates)
     bnh_stats.update({'avg_pnl_pct': 0, 'avg_win_pct': 0,
                       'avg_loss_pct': 0, 'avg_hold_days': len(all_dates)})
 
@@ -1031,13 +1011,14 @@ def main():
     print(f"  진입 조건 동일: VIX > 30  |  청산 조건만 상이".center(W2))
     print("=" * W2)
     print(
-        f"  {'전략':<26} {'최종자산':>12} {'CAGR':>8} {'MDD':>8} "
+        f"  {'전략':<26} {'최종자산':>12} {'CAGR':>8} {'MDD':>8} {'물린기간':>8} "
         f"{'Sharpe':>8} {'거래':>5} {'승률':>7} {'평균수익':>9} {'평균보유':>8}"
     )
-    print(f"  {'─'*26} {'─'*12} {'─'*8} {'─'*8} {'─'*8} {'─'*5} {'─'*7} {'─'*9} {'─'*8}")
+    print(f"  {'─'*26} {'─'*12} {'─'*8} {'─'*8} {'─'*8} {'─'*8} {'─'*5} {'─'*7} {'─'*9} {'─'*8}")
     for label, r in panic_results.items():
         print(
             f"  {label:<26} ${r['final']:>11,.0f} {r['cagr']:>+7.2f}% {r['mdd']:>7.2f}% "
+            f"{r['mdd_days']/252:>7.1f}년 "
             f"{r['sharpe']:>8.3f} {r['n']:>4}건 {r['wr']:>6.1f}% "
             f"{r['avg_pnl_pct']:>+8.2f}% {r['avg_hold_days']:>6}일"
         )
@@ -1045,6 +1026,7 @@ def main():
     r = bnh_stats
     print(
         f"  {'[벤치] SPY+QQQ 그냥보유':<26} ${r['final']:>11,.0f} {r['cagr']:>+7.2f}% {r['mdd']:>7.2f}% "
+        f"{r['mdd_days']/252:>7.1f}년 "
         f"{r['sharpe']:>8.3f} {'─':>4}  {'─':>6}  {'─':>9} {'전기간':>6}"
     )
     print("=" * W2)

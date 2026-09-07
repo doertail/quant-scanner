@@ -33,6 +33,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from btlib import calc_stats   # 중복 복붙 제거 — 단일 출처
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s  %(levelname)s  %(message)s',
@@ -47,7 +49,6 @@ INITIAL_CASH   = 100_000.0
 COMMISSION     = 0.001    # 코인주는 스프레드 넓어 비용 높게
 SLIPPAGE       = 0.001
 TOTAL_COST     = COMMISSION + SLIPPAGE
-RISK_FREE_RATE = 0.035
 RISK_PER_TRADE = 0.015    # 코인주 변동성 높아 약간 높임
 MAX_CAP        = 0.25     # 종목당 최대 25% (유니버스 작음)
 MAX_POS        = 4        # 최대 동시 보유
@@ -104,27 +105,6 @@ def download_single(ticker: str, start: str, end: str) -> pd.DataFrame | None:
 
 # ─── 통계 ────────────────────────────────────────────────────────────────────
 
-def calc_stats(equity: list, initial: float, trades: list) -> dict:
-    if len(equity) < 2:
-        return {k: 0 for k in ['final','ret','cagr','mdd','sharpe','sortino','calmar','n','wins','wr']}
-    final   = equity[-1]
-    ret     = (final - initial) / initial * 100
-    years   = len(equity) / 252.0
-    cagr    = ((final / initial) ** (1 / years) - 1) * 100 if years > 0 else 0
-    rets    = pd.Series(equity).pct_change().dropna()
-    avg_r   = rets.mean() * 252
-    std_r   = rets.std()  * np.sqrt(252)
-    sharpe  = (avg_r - RISK_FREE_RATE) / std_r if std_r > 0 else 0
-    dn_r    = rets[rets < 0].std() * np.sqrt(252)
-    sortino = (avg_r - RISK_FREE_RATE) / dn_r if dn_r > 0 else 0
-    pv      = pd.Series(equity)
-    mdd     = ((pv - pv.cummax()) / pv.cummax()).min() * 100
-    calmar  = cagr / abs(mdd) if mdd != 0 else 0
-    wins    = sum(1 for t in trades if t[1] > t[0])
-    wr      = wins / len(trades) * 100 if trades else 0.0
-    return dict(final=final, ret=ret, cagr=cagr, mdd=mdd,
-                sharpe=sharpe, sortino=sortino, calmar=calmar,
-                n=len(trades), wins=wins, wr=wr)
 
 
 def trade_stats(trades: list) -> dict:

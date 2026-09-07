@@ -97,7 +97,10 @@ def main():
                               etf_indicators=etf_indicators,
                               mom_rank_df=mom_rank_df, mom_rs_df=mom_rs_df)
         m = res["main"]
-        bnh = bt.calc_stats(bnh_equity(spy_close, qqq_close, win_dates, init), init, [])
+        bnh_eq = bnh_equity(spy_close, qqq_close, win_dates, init)
+        # bnh_equity가 dropna로 봉을 버릴 수 있어 길이가 맞을 때만 실측 RFR을 쓴다
+        bnh = bt.calc_stats(bnh_eq, init, [],
+                            dates=win_dates if len(bnh_eq) == len(win_dates) else None)
         rows.append((label, m, bnh))
 
     # ── 결과 표 ──────────────────────────────────────────────────────────

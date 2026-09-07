@@ -42,7 +42,7 @@ def bnh(spy_c, qqq_c, dates, initial):
         return None
     half = initial / 2.0
     eq = (half / s.iloc[0] * s + half / q.iloc[0] * q).tolist()
-    return bt.calc_stats(eq, initial, [])
+    return bt.calc_stats(eq, initial, [], dates=idx)
 
 
 def setup():

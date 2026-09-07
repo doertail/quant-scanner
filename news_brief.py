@@ -34,7 +34,10 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")   # ALPHAVANTAGE_API_KEY — 단독 실행에도 필요
 WATCHLIST_FILE = BASE_DIR / "watchlist.json"
 PORTFOLIO_FILE = BASE_DIR / "portfolio.json"
 
@@ -575,6 +578,91 @@ def coverage_line(tickers, coverage: dict, shown: set, covered: set,
     return f"📋 {' | '.join(parts)}" if parts else ""
 
 
+# ─── 시장 큰 사건 (내 종목 밖) ──────────────────────────────────────────────
+# 보유·관심 10종목만 보면 연준·금리·관세처럼 "남들 다 아는데 나만 모르는 것"을 영영 못 본다.
+# Alpha Vantage NEWS_SENTIMENT는 기사마다 토픽 관련도를 숫자로 준다 — 단어 리스트를 손으로
+# 늘리는 대신 점수 합으로 정렬한다.
+
+AV_URL = "https://www.alphavantage.co/query"
+# ⚠️ `topics=a,b`는 OR가 아니라 AND다 (실측 2026-09-07: 4개 동시 요청 → items 0).
+# 토픽당 따로 부르고 여기서 합친다. 하루 3콜, 무료 한도 25콜.
+AV_TOPICS = ("economy_monetary", "economy_fiscal", "financial_markets")
+MACRO_ITEMS = 3
+# 13F 지분공시 자동생성 기사 도배 — 95건 중 25건이 이 소스였다(2026-09-07).
+# 정규식이 아니라 소스 한 줄이라 사고마다 늘어나지 않는다.
+AV_SKIP_SOURCES = {"MarketBeat"}
+
+
+def _av_score(article: dict) -> float:
+    """우리가 요청한 토픽들의 관련도 합. 여러 토픽에 걸친 기사가 위로 온다."""
+    return sum(float(t.get("relevance_score") or 0)
+               for t in (article.get("topics") or []) if t.get("topic") in AV_TOPICS)
+
+
+def fetch_macro(hours: int = DEFAULT_HOURS, limit: int = MACRO_ITEMS) -> list:
+    """시장 전체 뉴스 상위 N건. 키가 없거나 실패하면 빈 리스트 — 리포트를 막지 않는다.
+
+    `sort=RELEVANCE`는 쓰지 않는다. 질의 관련도순이라 열흘 전 기사가 1순위로 올라온다
+    (실측 2026-09-07). 최신 창은 time_from으로 자르고 순위는 토픽 점수로 매긴다.
+    """
+    import os
+
+    import requests
+
+    key = os.getenv("ALPHAVANTAGE_API_KEY", "")
+    if not key:
+        return []
+    t_from = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y%m%dT%H%M")
+
+    feed = {}
+    for topic in AV_TOPICS:
+        try:
+            r = requests.get(AV_URL, timeout=15, params={
+                "function": "NEWS_SENTIMENT", "topics": topic, "sort": "LATEST",
+                "time_from": t_from, "limit": 50, "apikey": key,
+            })
+            r.raise_for_status()
+            got = r.json().get("feed") or []      # 한도 초과 시 {"Information": ...} → 빈 리스트
+        except Exception:
+            continue                              # 한 토픽이 죽어도 나머지는 쓴다
+        for a in got:
+            feed.setdefault(a.get("url"), a)
+
+    out, seen_heads = [], set()
+    for a in sorted(feed.values(), key=_av_score, reverse=True):
+        title = (a.get("title") or "").strip()
+        head = title[:40]
+        if not (title and a.get("url")) or a.get("source") in AV_SKIP_SOURCES or head in seen_heads:
+            continue                              # 같은 기사가 제목만 바뀌어 여러 건 온다
+        seen_heads.add(head)
+        body = (a.get("summary") or "").strip()
+        out.append({"title": title, "url": a["url"], "publisher": a.get("source") or "",
+                    "summary": body, "raw": body})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def macro_lines(hours: int = DEFAULT_HOURS) -> list:
+    """시장 섹션 줄들. 기사가 없으면 빈 리스트(헤더도 안 붙인다)."""
+    items = summarize_items(fetch_macro(hours))
+    if not items:
+        return []
+    lines = ["🌍 **시장** (내 종목 밖)"]
+    for it in items:
+        title = it["title"]
+        if len(title) > TITLE_MAX:
+            title = title[:TITLE_MAX - 1].rstrip() + "…"
+        src = f" — {it['publisher']}" if it["publisher"] else ""
+        lines.append(f"• [{title}](<{it['url']}>){src}")
+        summary = (it.get("summary") or "").strip()
+        if WITH_SUMMARY and summary:
+            if len(summary) > SUMMARY_MAX:
+                summary = summary[:SUMMARY_MAX - 1].rstrip() + "…"
+            lines.append(f"   ↳ {summary}")
+    return lines
+
+
 # ─── 렌더 ───────────────────────────────────────────────────────────────────
 
 def section_lines(items: list, budget: int | None = None, labels: dict | None = None,
@@ -632,6 +720,12 @@ def section_lines(items: list, budget: int | None = None, labels: dict | None = 
 
 
 def build_section(hours: int = DEFAULT_HOURS, budget: int | None = None) -> list:
+    # 시장 큰 사건이 맨 위 — 내 종목 뉴스는 그 아래. 실패하면 조용히 빠진다.
+    try:
+        macro = macro_lines(hours)
+    except Exception:
+        macro = []
+
     tickers = target_tickers()
     labels = display_labels()
     changes = fetch_changes(tickers)
@@ -644,7 +738,11 @@ def build_section(hours: int = DEFAULT_HOURS, budget: int | None = None) -> list
     items = summarize_items(fetch_news(rest, hours=hours, changes=changes,
                                        labels=labels, coverage=coverage))
 
-    used = len("\n".join(co_lines)) + 1 if co_lines else 0
+    head = (macro + [""] if macro else []) + (co_lines + [""] if co_lines else [])
+    used = len("\n".join(head)) + 1 if head else 0
+    # 📋 커버리지 줄은 예산 밖에서 뒤에 붙는다 — 자리를 미리 빼두지 않으면 총량이 넘친다.
+    # 아무것도 안 보인 최악의 경우로 잡는다(실제 줄은 항상 이보다 짧다).
+    used += len(coverage_line(tickers, coverage, set(), covered, labels)) + 1
     shown = set()
     news = section_lines(items, budget=(budget - used) if budget else None,
                          labels=labels, changes=changes, shown_out=shown)
@@ -652,7 +750,7 @@ def build_section(hours: int = DEFAULT_HOURS, budget: int | None = None) -> list
     cov = coverage_line(tickers, coverage, shown, covered, labels)
     if cov:
         news = news + [cov]
-    return (co_lines + [""] + news) if co_lines else news
+    return head + news
 
 
 def main():

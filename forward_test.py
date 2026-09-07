@@ -24,6 +24,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+import signals_io
 import toss_execution as te
 from toss_client import TossClient, TossAPIError
 from execution_layer import calc_shares
@@ -106,6 +107,13 @@ def main():
     except FileNotFoundError:
         print('signals.json 없음 — scanner_v4.py 먼저 실행'); return 1
 
+    # 낡은 신호로는 매매하지 않는다. 평가액은 계속 찍되(곡선 끊기면 그것도 거짓말),
+    # 결정은 멈추고 그 사실을 곡선에 남긴다 — 스캐너가 죽은 42일간 이 구분이 없어서
+    # "forward 검증"이 조용히 7월 8일 바스켓 buy&hold로 바뀌어 있었다.
+    stale = signals_io.describe(signals.get('date'))
+    if stale:
+        print(f"⚠️ signals.json {stale} — 매매 중단, 평가만 기록한다")
+
     paper = load_paper(args.cash)
     held = paper['holdings']
 
@@ -131,11 +139,16 @@ def main():
                      for t in held}
 
         regime = signals.get('regime', {})
-        exits = te.process_exits(signals.get('exits', []), held_view, held)
-        paper_value = mark_to_market(paper, price_cache)
-        entries = te.process_entries(signals.get('entries', {}), regime, held_view,
-                                     paper_value, paper['cash'], price_fn)
-        intents = exits + entries
+        if stale:
+            intents = []
+        else:
+            # paper_exits = 페이퍼 북 종목의 청산. exits(실계좌)를 보면 종목이 겹치지
+            # 않아 영영 못 판다 — 54일간 매도 0건이었던 원인.
+            exits = te.process_exits(signals.get('paper_exits', []), held_view, held)
+            paper_value = mark_to_market(paper, price_cache)
+            entries = te.process_entries(signals.get('entries', {}), regime, held_view,
+                                         paper_value, paper['cash'], price_fn)
+            intents = exits + entries
 
         # 체결가 맵 (의도 종목 가격 확보)
         for it in intents:
@@ -156,13 +169,17 @@ def main():
     PAPER_FILE.write_text(json.dumps(paper, ensure_ascii=False, indent=2), encoding='utf-8')
     today = datetime.today().strftime('%Y-%m-%d')
     edge = round(value - qqq_value, 2) if qqq_value is not None else None
-    append_equity({'date': today, 'value': value, 'cash': round(paper['cash'], 2),
-                   'n_pos': len(paper['holdings']), 'trades': n,
-                   'qqq': qqq_value, 'edge_vs_qqq': edge})
+    record = {'date': today, 'value': value, 'cash': round(paper['cash'], 2),
+              'n_pos': len(paper['holdings']), 'trades': n,
+              'qqq': qqq_value, 'edge_vs_qqq': edge}
+    if stale:
+        record['stale'] = stale  # 이 날의 성과는 전략이 아니라 방치의 결과다
+    append_equity(record)
 
     bench = f" | QQQ ${qqq_value:,.2f} (전략 {edge:+,.2f})" if qqq_value is not None else ""
     print(f"[forward {today}] 페이퍼 평가액 ${value:,.2f} | 현금 ${paper['cash']:,.2f} "
-          f"| 보유 {len(paper['holdings'])}종목 | 오늘 체결 {n}건{bench}")
+          f"| 보유 {len(paper['holdings'])}종목 | 오늘 체결 {n}건{bench}"
+          f"{' ⚠️ ' + stale if stale else ''}")
     return 0
 
 

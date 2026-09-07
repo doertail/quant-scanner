@@ -30,7 +30,7 @@ def bnh(ctx, dates):
     qqq = ctx["qqq_df"]["Close"].reindex(dates, method="ffill")
     half = bt.INITIAL_CASH / 2.0
     eq = (half / spy.iloc[0] * spy + half / qqq.iloc[0] * qqq).tolist()
-    return bt.calc_stats(eq, bt.INITIAL_CASH, [])
+    return bt.calc_stats(eq, bt.INITIAL_CASH, [], dates=dates)
 
 
 def main():

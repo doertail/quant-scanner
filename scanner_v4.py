@@ -94,6 +94,129 @@ def _run_risk_briefing() -> None:
         log.warning(f"위험 브리핑 실패(스캔은 정상 완료): {e}")
 
 
+PAPER_FILE = BASE_DIR / 'forward_paper.json'
+EXIT_SIGNALS = {'STOP', 'TP1', 'TP2', 'MA_CROSS', 'C_EXIT'}
+
+
+def exit_rows(rows: list, book: dict) -> list:
+    """port_rows에서 청산 신호만 뽑아 signals.json 형태로."""
+    return [
+        {
+            'ticker':        p['ticker'],
+            'signal':        p['signal'],
+            'strategy':      p.get('strategy', 'A'),
+            'shares':        book.get(p['ticker'], {}).get('shares', 0),
+            'trailing_stop': p.get('trailing_stop'),
+        }
+        for p in rows if p.get('signal') in EXIT_SIGNALS
+    ]
+
+
+def load_paper_book() -> dict:
+    """forward_test.py의 페이퍼 북 보유분. 없으면 빈 dict."""
+    try:
+        return json.loads(PAPER_FILE.read_text(encoding='utf-8')).get('holdings', {})
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_paper_book(holdings: dict) -> None:
+    """evaluate_holdings가 갱신한 trailing_stop/tp1_hit를 페이퍼 북에 되돌려 쓴다."""
+    try:
+        book = json.loads(PAPER_FILE.read_text(encoding='utf-8'))
+    except (FileNotFoundError, ValueError):
+        return
+    book['holdings'] = holdings
+    PAPER_FILE.write_text(json.dumps(book, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def evaluate_holdings(holdings: dict, get_df, core_assets: set, vix_price) -> tuple[list, list]:
+    """보유 종목의 청산 신호를 판정한다. pos를 제자리 변경(trailing_stop, tp1_hit).
+
+    실계좌(portfolio.json)와 페이퍼 북(forward_paper.json)에 같은 규칙을 쓰려고 분리했다.
+    예전엔 실계좌만 돌아서 페이퍼 북 종목엔 청산 신호가 영영 안 생겼고, forward_test가
+    54일 동안 한 번도 못 파는 buy&hold가 돼 있었다.
+    """
+    port_rows:    list[dict] = []
+    stop_updates: list[str] = []
+
+    for ticker, pos in holdings.items():
+        df = get_df(ticker)
+        if df is None:
+            port_rows.append({'ticker': ticker, 'signal': 'NO_DATA', 'strategy': 'N/A'})
+            continue
+
+        row   = df.iloc[-1]
+        close = float(row['Close'])
+        atr   = float(row['ATR'])
+        rsi   = float(row['RSI'])
+        ma20  = float(row['MA20'])
+        ma50  = float(row['MA50'])
+        vr    = vol_ratio_of(row)
+        
+        strategy_type = pos.get('strategy')
+        if not strategy_type:
+            log.warning(f"{ticker}에 strategy 태그 없음. 'A'(방패)로 간주합니다.")
+            strategy_type = 'A'
+            pos['strategy'] = 'A'
+
+        buy_price = pos.get('buy_price', close)
+        pnl_pct   = (close - buy_price) / buy_price * 100
+        signal    = 'HOLD'
+
+        # 전략 C: 트레일링 스톱 없음, VIX 기반 청산만 적용
+        if strategy_type == 'C':
+            if not pd.isna(vix_price) and vix_price < VIX_C_EXIT:
+                signal = 'C_EXIT'
+            port_rows.append({
+                'ticker': ticker, 'strategy': 'C', 'close': close,
+                'pnl_pct': round(pnl_pct, 1), 'rsi': round(rsi, 1), 'vol_ratio': vr,
+                'trailing_stop': float('nan'), 'ma20': round(ma20, 2),
+                'ma50': round(ma50, 2), 'signal': signal,
+                'vix_entry': pos.get('vix_entry', float('nan')),
+            })
+            continue
+
+        old_stop = pos.get('trailing_stop') or -999
+        if ticker not in core_assets:
+            if strategy_type == 'A':
+                mult = A_ATR_TIGHT if rsi >= A_RSI_PARTIAL else A_ATR_MULT
+            elif strategy_type == 'B':
+                mult = B_ATR_MULT
+            else:  # D
+                mult = D_ATR_MULT
+
+            new_stop = round(close - atr * mult, 2)
+            if new_stop > old_stop:
+                pos['trailing_stop'] = new_stop
+                stop_updates.append(f"({pos['strategy']}) {ticker}  ${old_stop:.2f} → ${new_stop:.2f}")
+
+        trailing_stop = pos.get('trailing_stop') or -999
+
+        if ticker in core_assets:
+            signal = 'CORE'
+        elif close <= trailing_stop:
+            signal = 'STOP'
+        else:
+            if strategy_type == 'A':
+                if not pos.get('tp1_hit', False) and rsi >= A_RSI_PARTIAL:
+                    signal = 'TP1'          # RSI 50 도달 → 50% 매도
+                    pos['tp1_hit'] = True
+                elif pos.get('tp1_hit', False) and close >= ma20:
+                    signal = 'TP2'          # MA20 도달 → 나머지 전량 매도
+            elif strategy_type in ('B', 'D'):
+                if close < ma50:
+                    signal = 'MA_CROSS'
+
+        port_rows.append({
+            'ticker': ticker, 'strategy': strategy_type, 'close': close,
+            'pnl_pct': round(pnl_pct, 1), 'rsi': round(rsi, 1), 'vol_ratio': vr,
+            'trailing_stop': trailing_stop, 'ma20': round(ma20, 2),
+            'ma50': round(ma50, 2), 'signal': signal,
+        })
+    return port_rows, stop_updates
+
+
 def main() -> None:
     today = datetime.today().strftime('%Y-%m-%d')
     tomorrow = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')  # yfinance end는 exclusive
@@ -114,11 +237,13 @@ def main() -> None:
 
     holdings, portfolio_cash = load_portfolio()
     core_assets  = {t for t, pos in holdings.items() if pos.get('strategy') == 'Core'}
-    port_tickers = list(holdings.keys())
+    # 페이퍼 북은 실계좌와 종목이 겹치지 않는다. 시세를 같이 받아야 청산 판정이 된다.
+    paper_book   = load_paper_book()
+    port_tickers = sorted(set(holdings) | set(paper_book))
     all_tickers  = list(set(sp500 + ndx100 + port_tickers + D_TICKERS + ['QQQ', 'HYG']))
     log.info(
         f"S&P500 {len(sp500)}  NDX100 {len(ndx100)}  "
-        f"포트폴리오 {len(port_tickers)}  합계(중복제거) {len(all_tickers)}"
+        f"포트폴리오 {len(holdings)}  페이퍼 {len(paper_book)}  합계(중복제거) {len(all_tickers)}"
     )
 
     # ── 2. 데이터 다운로드 (단일 배치) ──────────────────────────────────────
@@ -365,83 +490,10 @@ def main() -> None:
         return None
 
     # ── 5. Phase 2: 포트폴리오 모니터 (전략별 로직 분리) ───────────────────
-    port_rows:    list[dict] = []
-    stop_updates: list[str] = []
-
-    for ticker, pos in holdings.items():
-        df = get_df(ticker)
-        if df is None:
-            port_rows.append({'ticker': ticker, 'signal': 'NO_DATA', 'strategy': 'N/A'})
-            continue
-
-        row   = df.iloc[-1]
-        close = float(row['Close'])
-        atr   = float(row['ATR'])
-        rsi   = float(row['RSI'])
-        ma20  = float(row['MA20'])
-        ma50  = float(row['MA50'])
-        vr    = vol_ratio_of(row)
-        
-        strategy_type = pos.get('strategy')
-        if not strategy_type:
-            log.warning(f"{ticker}에 strategy 태그 없음. 'A'(방패)로 간주합니다.")
-            strategy_type = 'A'
-            pos['strategy'] = 'A'
-
-        buy_price = pos.get('buy_price', close)
-        pnl_pct   = (close - buy_price) / buy_price * 100
-        signal    = 'HOLD'
-
-        # 전략 C: 트레일링 스톱 없음, VIX 기반 청산만 적용
-        if strategy_type == 'C':
-            if not pd.isna(vix_price) and vix_price < VIX_C_EXIT:
-                signal = 'C_EXIT'
-            port_rows.append({
-                'ticker': ticker, 'strategy': 'C', 'close': close,
-                'pnl_pct': round(pnl_pct, 1), 'rsi': round(rsi, 1), 'vol_ratio': vr,
-                'trailing_stop': float('nan'), 'ma20': round(ma20, 2),
-                'ma50': round(ma50, 2), 'signal': signal,
-                'vix_entry': pos.get('vix_entry', float('nan')),
-            })
-            continue
-
-        old_stop = pos.get('trailing_stop') or -999
-        if ticker not in core_assets:
-            if strategy_type == 'A':
-                mult = A_ATR_TIGHT if rsi >= A_RSI_PARTIAL else A_ATR_MULT
-            elif strategy_type == 'B':
-                mult = B_ATR_MULT
-            else:  # D
-                mult = D_ATR_MULT
-
-            new_stop = round(close - atr * mult, 2)
-            if new_stop > old_stop:
-                pos['trailing_stop'] = new_stop
-                stop_updates.append(f"({pos['strategy']}) {ticker}  ${old_stop:.2f} → ${new_stop:.2f}")
-
-        trailing_stop = pos.get('trailing_stop') or -999
-
-        if ticker in core_assets:
-            signal = 'CORE'
-        elif close <= trailing_stop:
-            signal = 'STOP'
-        else:
-            if strategy_type == 'A':
-                if not pos.get('tp1_hit', False) and rsi >= A_RSI_PARTIAL:
-                    signal = 'TP1'          # RSI 50 도달 → 50% 매도
-                    pos['tp1_hit'] = True
-                elif pos.get('tp1_hit', False) and close >= ma20:
-                    signal = 'TP2'          # MA20 도달 → 나머지 전량 매도
-            elif strategy_type in ('B', 'D'):
-                if close < ma50:
-                    signal = 'MA_CROSS'
-
-        port_rows.append({
-            'ticker': ticker, 'strategy': strategy_type, 'close': close,
-            'pnl_pct': round(pnl_pct, 1), 'rsi': round(rsi, 1), 'vol_ratio': vr,
-            'trailing_stop': trailing_stop, 'ma20': round(ma20, 2),
-            'ma50': round(ma50, 2), 'signal': signal,
-        })
+    port_rows, stop_updates = evaluate_holdings(holdings, get_df, core_assets, vix_price)
+    # 페이퍼 북은 같은 규칙, 다른 장부. Core 예외 없음 — 순수 전략만 굴린다.
+    paper_rows, _ = evaluate_holdings(paper_book, get_df, set(), vix_price)
+    save_paper_book(paper_book)
 
     save_portfolio(holdings, portfolio_cash)
     if stop_updates:
@@ -813,7 +865,6 @@ def main() -> None:
     scan_text = "\n".join(out)
 
     # ── signals.json 내보내기 ─────────────────────────────────────────────────
-    _exit_signals = {'STOP', 'TP1', 'TP2', 'MA_CROSS', 'C_EXIT'}
     signals_data  = {
         'date': today,
         'regime': {
@@ -834,16 +885,9 @@ def main() -> None:
             'allow_entry_b': allow_entry_b,
         },
         'portfolio_cash': portfolio_cash,
-        'exits': [
-            {
-                'ticker':        p['ticker'],
-                'signal':        p['signal'],
-                'strategy':      p.get('strategy', 'A'),
-                'shares':        holdings.get(p['ticker'], {}).get('shares', 0),
-                'trailing_stop': p.get('trailing_stop'),
-            }
-            for p in port_rows if p.get('signal') in _exit_signals
-        ],
+        'exits':       exit_rows(port_rows, holdings),
+        # 페이퍼 북 전용 청산. forward_test는 이걸 본다 — 실계좌 exits와 종목이 다르다.
+        'paper_exits': exit_rows(paper_rows, paper_book),
         'entries': {
             'A': entry_a[:3],
             'B': entry_b[:3],
@@ -861,6 +905,7 @@ def main() -> None:
             json.dump(signals_data, f, indent=2, ensure_ascii=False, default=str)
         log.info(
             f"signals.json 저장: 청산 {len(signals_data['exits'])}건 "
+            f"(페이퍼 {len(signals_data['paper_exits'])}건) "
             f"| 진입 A {len(entry_a)}건 B {len(entry_b)}건 D {len(entry_d)}건"
         )
     except Exception as e:

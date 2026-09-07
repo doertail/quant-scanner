@@ -22,6 +22,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+import signals_io
+
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
@@ -40,13 +42,20 @@ def _load(path, default):
         return default
 
 
+# 스캐너가 죽어도 리포트는 낡은 signals.json으로 계속 발송된다(2026-07-10~09-05, 83회 무증상).
+# 날짜가 밀리면 헤더에 박아서 조용히 못 죽게 한다. 판정 기준은 signals_io 단일 출처.
+def stale_warning(date: str) -> str:
+    desc = signals_io.describe(date)
+    return f" ⚠️ **{desc} — 아래 숫자는 낡았다**" if desc else ""
+
+
 def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
                  prices: dict | None = None, megadip_lines: list | None = None,
                  risk_line: str | None = None) -> str:
     prices = prices or {}
     r = signals.get("regime", {})
     date = signals.get("date", datetime.today().strftime("%Y-%m-%d"))
-    L = [f"📊 **일일 리포트 {date}**", "```"]
+    L = [f"📊 **일일 리포트 {date}**{stale_warning(date)}", "```"]
 
     # 레짐
     hyg = "정상" if r.get("hyg_ok", True) else "⚠️악화"
