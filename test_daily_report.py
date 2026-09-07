@@ -38,6 +38,13 @@ def test_report_handles_missing_forward():
     assert "일일 리포트" in r   # forward 없어도 안 깨짐
 
 
+def test_coverage_warning():
+    # 커버리지가 온전하면 조용, 쪼그라들면 리포트에 박힌다 (2026-09-08: launchd 실행마다 30%였다)
+    assert "커버리지" not in dr.build_report({**SIG, "coverage_pct": 100.0}, HOLD, FWD)
+    assert "커버리지" not in dr.build_report(SIG, HOLD, FWD)          # 옛 signals.json — 없으면 조용
+    assert "커버리지 30%" in dr.build_report({**SIG, "coverage_pct": 30.3}, HOLD, FWD)
+
+
 def test_stale_warning():
     from datetime import datetime, timedelta
     import daily_report as dr

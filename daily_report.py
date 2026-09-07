@@ -67,6 +67,10 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
              f"| HYG {hyg} | 진입 A:{a} B:{b}")
     if risk_line:
         L.append(risk_line)
+    # 다운로드 실패로 유니버스가 쪼그라들어도 후보는 나온다. 낡음 경고와 같은 이유로 박는다.
+    cov = signals.get("coverage_pct")
+    if isinstance(cov, (int, float)) and cov < 90:
+        L.append(f"⚠️ 유니버스 커버리지 {cov:.0f}% — 아래 진입후보는 일부만 본 결과다")
 
     # 보유
     L.append("")

@@ -31,6 +31,7 @@ VIX 구간 (백테스트 근거)
 import json
 import logging
 import os
+import resource
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -68,6 +69,14 @@ from universe import get_nasdaq100_tickers, get_sp500_tickers
 
 # cron/launchd 환경에서 HOME 미설정 시 SQLite 캐시 오류 방지
 yf.set_tz_cache_location(str(BASE_DIR / '.yf_cache'))
+
+# launchd의 maxfiles 소프트 한도는 256(셸은 1M). 500종목 배치 중 FD가 말라
+# yfinance tz 캐시가 OperationalError('unable to open database file')로 죽고,
+# 그 티커들은 조용히 유니버스에서 사라진다(스케줄 실행마다 ~70% 손실).
+# 셸에서 손으로 돌리면 재현 안 되는 게 이 버그가 오래 산 이유다.
+_soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+if _soft < 10240:
+    resource.setrlimit(resource.RLIMIT_NOFILE, (min(10240, _hard), _hard))
 
 # ─── 초기화 ──────────────────────────────────────────────────────────────────
 load_dotenv(BASE_DIR / '.env', override=True)
@@ -369,6 +378,12 @@ def main() -> None:
     stock_etc    = build_stock_data(raw, port_tickers)
     stock_crypto = build_stock_data(raw, D_TICKERS)
     log.info(f"방패 유니버스 {len(stock_sp)}개  창 유니버스 {len(stock_ndx)}개  크립토(D) {len(stock_crypto)}개")
+    # 다운로드가 반쯤 실패해도 스캔은 그대로 돌아 후보를 뱉는다 — 그게 제일 위험하다.
+    # 몇 %를 실제로 본 건지 signals에 박아서 리포트가 대신 짖게 한다.
+    coverage_pct = round(len(stock_sp) / len(sp500) * 100, 1) if sp500 else 0.0
+    if coverage_pct < 90:
+        log.warning(f"⚠️ 유니버스 커버리지 {coverage_pct}% "
+                    f"({len(stock_sp)}/{len(sp500)}) — 데이터 누락, 후보 목록 불완전")
 
     # ETH-USD 레짐 필터 (개별 다운로드)
     eth_close  = pd.Series(dtype=float)
@@ -885,6 +900,7 @@ def main() -> None:
             'allow_entry_b': allow_entry_b,
         },
         'portfolio_cash': portfolio_cash,
+        'coverage_pct': coverage_pct,
         'exits':       exit_rows(port_rows, holdings),
         # 페이퍼 북 전용 청산. forward_test는 이걸 본다 — 실계좌 exits와 종목이 다르다.
         'paper_exits': exit_rows(paper_rows, paper_book),
