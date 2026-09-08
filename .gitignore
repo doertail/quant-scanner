@@ -7,7 +7,6 @@ venv/
 __pycache__/
 *.pyc
 scanner_v4.log
-run_scanner.sh
 portfolio.json
 portfolio.json.bak
 external_holdings.json
