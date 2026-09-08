@@ -66,73 +66,71 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
     prices = prices or {}
     r = signals.get("regime", {})
     date = signals.get("date", datetime.today().strftime("%Y-%m-%d"))
-    L = [f"📊 **일일 리포트 {date}**{stale_warning(date)}", "```"]
+    L = [f"📊 **일일 리포트 {date}**{stale_warning(date)}"]
 
-    # 레짐
-    hyg = "정상" if r.get("hyg_ok", True) else "⚠️악화"
-    a = "O" if r.get("allow_entry_a") else "X"
-    b = "O" if r.get("allow_entry_b") else "X"
-    vix = r.get("vix")
-    vix_s = f"{vix:.1f}" if isinstance(vix, (int, float)) else "?"
-    L.append(f"🌐 레짐 {r.get('market_regime','?')} | VIX {vix_s}({r.get('vix_zone','?')}) "
-             f"| HYG {hyg} | 진입 A:{a} B:{b}")
-    if risk_line:
-        L.append(risk_line)
+    # 경고는 코드블록 **밖**에 굵게 — 안에 넣으면 회색 벽에 섞여 안 보인다.
     # 다운로드 실패로 유니버스가 쪼그라들어도 후보는 나온다. 낡음 경고와 같은 이유로 박는다.
     cov = signals.get("coverage_pct")
     if isinstance(cov, (int, float)) and cov < 90:
-        L.append(f"⚠️ 유니버스 커버리지 {cov:.0f}% — 아래 진입후보는 일부만 본 결과다")
+        L.append(f"⚠️ **유니버스 커버리지 {cov:.0f}% — 아래 진입후보는 일부만 본 결과다**")
     if sync_line:
-        L.append(sync_line)
+        L.append(f"**{sync_line}**")
 
-    # 보유
-    L.append("")
-    L.append(f"💼 보유 {len(holdings)}종목")
+    # 1. 액션 — 오늘 손을 움직일 것이 맨 위. 나머지는 참고자료다.
+    L += ["", "⚡ **액션**", "```"]
+    exits = signals.get("exits", []) or []
+    for e in exits:
+        L.append(f"🔴 매도  {str(e.get('ticker','?')):<5}  {e.get('signal','')}")
+    if not exits:
+        L.append("매도 신호 없음")
+    ent = signals.get("entries", {}) or {}
+    cands = [(c, s) for s in ("A", "B", "C", "D") for c in (ent.get(s) or [])[:3]]
+    for c, s in cands[:6]:
+        rsi = c.get("rsi")
+        rsi_s = f"RSI {rsi:.0f}" if isinstance(rsi, (int, float)) else ""
+        L.append(f"🟢 매수  {str(c.get('ticker','?')):<5}  {s}  {rsi_s}")
+    if not cands:
+        L.append("진입 후보 없음")
+    L.append("```")
+
+    # 2. 보유 — 티커/손익 열 맞춰서 세로로 훑게
+    cash = signals.get("portfolio_cash")
+    cash_s = f" · 현금 ${cash:,.0f}(예비탄 ${RESERVE_USD:,})" if cash is not None else ""
+    L += ["", f"💼 **보유 {len(holdings)}종목{cash_s}**", "```"]
     for t, p in holdings.items():
         strat = p.get("strategy", "?")
         px = prices.get(t)
         if px and p.get("buy_price"):
             pnl = (px - p["buy_price"]) / p["buy_price"] * 100
             emoji = "🟢" if pnl >= 0 else "🔴"
-            L.append(f"  {emoji} {t:6} [{strat}] {pnl:+.1f}%")
+            L.append(f"{emoji} {t:<5} {pnl:>+7.1f}%   {strat}")
         else:
-            L.append(f"  •  {t:6} [{strat}] {p.get('shares','?')}주")
-    cash = signals.get("portfolio_cash")
-    if cash is not None:
-        L.append(f"  💵 현금 ${cash:,.0f} (예비탄 ~${RESERVE_USD:,} 포함)")
-
-    # 액션
-    L.append("")
-    L.append("⚡ 액션")
-    exits = signals.get("exits", []) or []
-    if exits:
-        for e in exits:
-            L.append(f"  🔴 매도 {e.get('ticker')} [{e.get('signal')}]")
-    else:
-        L.append("  매도 신호 없음")
-    ent = signals.get("entries", {}) or {}
-    cands = []
-    for strat in ("A", "B", "C", "D"):
-        for c in (ent.get(strat) or [])[:3]:
-            cands.append(f"{c.get('ticker')}({strat}{' RSI'+str(round(c['rsi'])) if c.get('rsi') is not None else ''})")
-    if cands:
-        L.append(f"  🟢 진입후보: {', '.join(cands[:6])}")
-    else:
-        L.append("  진입 후보 없음")
-
-    # forward
-    if fwd_last:
-        L.append("")
-        edge = fwd_last.get("edge_vs_qqq")
-        v, q = fwd_last.get("value"), fwd_last.get("qqq")
-        if v is not None and q is not None:
-            sign = "✅앞섬" if (edge or 0) >= 0 else "🔻뒤짐"
-            L.append(f"📈 forward: 전략 ${v:,.0f} vs QQQ ${q:,.0f} (격차 {edge:+.2f} {sign})")
-    # 메가캡 딥 섹션 (ABC와 별개, 한 메시지로 통합)
-    if megadip_lines:
-        L.append("")
-        L += megadip_lines
+            sh = p.get("shares")
+            sh_s = f"{sh:.2f}주" if isinstance(sh, (int, float)) else f"{sh}주"
+            L.append(f"⚪ {t:<5} {sh_s:>8}   {strat}")
     L.append("```")
+
+    # 3. 메가캡 딥 (ABC와 별개, 한 메시지로 통합). [0]은 섹션 헤더 — 블록 밖으로 뺀다.
+    if megadip_lines:
+        L += ["", f"**{megadip_lines[0].strip()}**", "```"]
+        L += [x.strip() for x in megadip_lines[1:]]
+        L.append("```")
+
+    # 4. 맥락 — 매일 안 바뀌는 것들은 맨 아래 한 줄씩
+    L.append("")
+    if fwd_last:
+        v, q = fwd_last.get("value"), fwd_last.get("qqq")
+        if v is not None and q:
+            pct = (v - q) / q * 100
+            L.append(f"📈 forward ${v:,.0f} vs QQQ ${q:,.0f} · "
+                     f"**{pct:+.1f}%** {'✅앞섬' if pct >= 0 else '🔻뒤짐'}")
+    hyg = "정상" if r.get("hyg_ok", True) else "⚠️악화"
+    vix = r.get("vix")
+    vix_s = f"{vix:.1f}" if isinstance(vix, (int, float)) else "?"
+    L.append(f"🌐 {r.get('market_regime','?')} · VIX {vix_s} {r.get('vix_zone','?')} · HYG {hyg} · "
+             f"진입 A{'✅' if r.get('allow_entry_a') else '❌'} B{'✅' if r.get('allow_entry_b') else '❌'}")
+    if risk_line:
+        L.append(risk_line.replace(" | ", " · "))
     return "\n".join(L)
 
 
