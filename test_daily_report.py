@@ -45,6 +45,19 @@ def test_coverage_warning():
     assert "커버리지 30%" in dr.build_report({**SIG, "coverage_pct": 30.3}, HOLD, FWD)
 
 
+def test_sync_warning():
+    # 토스 동기화가 밀리면 보유·현금이 실계좌와 다른 채로 리포트가 나간다.
+    # 실패는 forward_cron.log에만 남아 안 보였다 (2026-09-08).
+    from datetime import datetime, timedelta
+    today = datetime.today()
+    assert dr.sync_warning(today.strftime("%Y-%m-%d")) == ""
+    assert dr.sync_warning((today - timedelta(days=3)).strftime("%Y-%m-%d")) == ""  # 화 아침 = 토요일치
+    assert "4일 전" in dr.sync_warning((today - timedelta(days=4)).strftime("%Y-%m-%d"))
+    assert "기록 없음" in dr.sync_warning(None)   # 파일 없음 = 성공한 적 없음
+    assert "토스 동기화" in dr.build_report(SIG, HOLD, FWD, sync_line="⚠️ 토스 동기화 기록 없음")
+    assert "토스 동기화" not in dr.build_report(SIG, HOLD, FWD)
+
+
 def test_stale_warning():
     from datetime import datetime, timedelta
     import daily_report as dr

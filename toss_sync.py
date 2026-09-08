@@ -23,6 +23,7 @@ import argparse
 import json
 import shutil
 import sys
+from datetime import datetime
 
 from dotenv import load_dotenv
 
@@ -33,6 +34,9 @@ from toss_client import TossClient, TossAPIError
 # (스캐너의 save_portfolio()가 portfolio.json을 {holdings, cash}로만 덮어쓰므로
 #  portfolio.json 안에 두면 스캔 1회로 사라진다.)
 EXTERNAL_FILE = PORTFOLIO_FILE.parent / "external_holdings.json"
+
+# 마지막으로 성공한 --apply 날짜. daily_report가 읽어 헤더에 경고를 띄운다.
+SYNC_STATE = PORTFOLIO_FILE.parent / "toss_sync_state.json"
 
 # 스캐너 전략 관리 대상에서 보존할 상태 필드
 _PRESERVE = ("strategy", "trailing_stop", "tp1_hit", "vix_entry", "auto_invest")
@@ -196,6 +200,12 @@ def main() -> int:
             print(f"💾 외부 보유: {EXTERNAL_FILE} ({len(report['external'])}종목)")
         else:
             print(f"⏭️  외부 보유: 토스 국내분 0건 → {EXTERNAL_FILE} 유지(덮어쓰지 않음)")
+        # 성공한 --apply만 기록한다. 실패·미실행·하드크래시는 전부 "날짜가 안 올라감"으로
+        # 같게 보이고, daily_report가 그걸 보고 짖는다. run_forward.sh의 실패 메시지는
+        # forward_cron.log에만 남아 아무도 안 봤다(2026-09-08).
+        SYNC_STATE.write_text(
+            json.dumps({"date": datetime.today().strftime("%Y-%m-%d")}), encoding="utf-8")
+        print(f"💾 동기화 기록: {SYNC_STATE}")
     else:
         print("\n(미리보기였음 — 실제 반영하려면 --apply)")
 

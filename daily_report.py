@@ -30,6 +30,7 @@ load_dotenv(BASE_DIR / ".env")
 SIGNALS = BASE_DIR / "signals.json"
 PORTFOLIO = BASE_DIR / "portfolio.json"
 FORWARD = BASE_DIR / "forward_equity.json"
+SYNC_STATE = BASE_DIR / "toss_sync_state.json"  # toss_sync.py --apply 마지막 성공 날짜
 RESERVE_USD = 1250  # VIX 공포 예비탄 (참고 표시용)
 DISCORD_SAFE_LEN = 1900  # notify.send_discord의 청크 크기 — 넘으면 2통으로 쪼개진다
 NEWS_WEBHOOK_ENV = "DISCORD_NEWS_WEBHOOK_URL"  # 설정되면 뉴스를 #경제로 분리 발송
@@ -49,9 +50,19 @@ def stale_warning(date: str) -> str:
     return f" ⚠️ **{desc} — 아래 숫자는 낡았다**" if desc else ""
 
 
+# 토스 동기화가 밀리면 보유·현금이 실계좌와 다른 채로 리포트가 나간다. 실패 메시지는
+# forward_cron.log에만 남아 두 달간 아무도 안 봤다. 낡음 판정은 signals_io 단일 출처.
+def sync_warning(sync_date) -> str:
+    if not signals_io.is_stale(sync_date):
+        return ""
+    days = signals_io.age_days(sync_date)
+    ago = "기록 없음" if days is None else f"{days}일 전"
+    return f"⚠️ 토스 동기화 {ago} — 보유·현금이 실계좌와 다를 수 있다"
+
+
 def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
                  prices: dict | None = None, megadip_lines: list | None = None,
-                 risk_line: str | None = None) -> str:
+                 risk_line: str | None = None, sync_line: str | None = None) -> str:
     prices = prices or {}
     r = signals.get("regime", {})
     date = signals.get("date", datetime.today().strftime("%Y-%m-%d"))
@@ -71,6 +82,8 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
     cov = signals.get("coverage_pct")
     if isinstance(cov, (int, float)) and cov < 90:
         L.append(f"⚠️ 유니버스 커버리지 {cov:.0f}% — 아래 진입후보는 일부만 본 결과다")
+    if sync_line:
+        L.append(sync_line)
 
     # 보유
     L.append("")
@@ -182,7 +195,8 @@ def main():
         print(f"(위험등급 생략: {e})", file=sys.stderr)
 
     report = build_report(signals, holdings, fwd_last, prices,
-                          megadip_lines=megadip_lines, risk_line=risk_line)
+                          megadip_lines=megadip_lines, risk_line=risk_line,
+                          sync_line=sync_warning(_load(SYNC_STATE, {}).get("date")))
 
     # 뉴스: 전용 웹훅(#경제)이 있으면 그쪽으로 **따로** 보낸다.
     # 그래야 1900자를 리포트와 나눠 쓰지 않아서 요약까지 붙은 기사를 여러 건 실을 수 있다.
