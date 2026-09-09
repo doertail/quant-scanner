@@ -7,7 +7,9 @@ SIG = {
                "hyg_ok": True, "allow_entry_a": True, "allow_entry_b": True},
     "portfolio_cash": 3820.04,
     "exits": [],
-    "entries": {"A": [{"ticker": "DOW", "rsi": 28}], "B": [], "C": [], "D": []},
+    "entries": {"A": [{"ticker": "DOW", "rsi": 28, "score": 0.3147},
+                      {"ticker": "GD", "rsi": 29, "score": 0.2}],
+                "B": [{"ticker": "NBIS", "rsi": 57, "score": 0.688}], "C": [], "D": []},
 }
 HOLD = {"QQQM": {"shares": 7.78, "buy_price": 274.32, "strategy": "Core"},
         "HSY": {"shares": 2.0, "buy_price": 197.42, "strategy": "A"}}
@@ -56,6 +58,33 @@ def test_sync_warning():
     assert "기록 없음" in dr.sync_warning(None)   # 파일 없음 = 성공한 적 없음
     assert "토스 동기화" in dr.build_report(SIG, HOLD, FWD, sync_line="⚠️ 토스 동기화 기록 없음")
     assert "토스 동기화" not in dr.build_report(SIG, HOLD, FWD)
+
+
+def test_score_and_rank_shown():
+    # 23:00에도 리포트가 오는데 순위·점수가 없으면 5개 중 뭘 살지 못 고른다.
+    r = dr.build_report(SIG, HOLD, FWD)
+    assert "A1 0.31" in r and "A2 0.20" in r
+    assert "B1 0.69" in r          # 순위는 전략 안에서만 — A/B 점수는 스케일이 다르다
+    assert "✅ =" not in r         # 아침 스냅샷이 없으면 범례도 없다
+
+
+def test_morning_confirmation_mark():
+    # 23:00 인트라데이 후보 중 아침 종가 스캔에도 있던 것에만 ✅ (백테스트와 같은 기준)
+    buys = [x for x in dr.build_report(SIG, HOLD, FWD, confirmed={"DOW"}).splitlines()
+            if x.startswith("🟢 매수")]
+    assert [x.endswith("✅") for x in buys] == [True, False, False]   # DOW만
+
+
+def test_morning_tickers_ignores_other_day(tmp_path, monkeypatch):
+    import json
+    f = tmp_path / "m.json"
+    f.write_text(json.dumps({"date": "2026-06-24",
+                             "entries": {"A": [{"ticker": "DOW"}], "B": [{"ticker": "NBIS"}]}}))
+    monkeypatch.setattr(dr, "MORNING", f)
+    assert dr.morning_tickers("2026-06-24") == {"DOW", "NBIS"}
+    assert dr.morning_tickers("2026-06-25") == set()   # 어제치가 남아 있어도 안 쓴다
+    monkeypatch.setattr(dr, "MORNING", tmp_path / "none.json")
+    assert dr.morning_tickers("2026-06-24") == set()   # 07:30 실행엔 파일이 없다
 
 
 def test_stale_warning():

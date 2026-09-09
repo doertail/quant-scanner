@@ -13,6 +13,7 @@ external_holdings.json
 .yf_cache/
 bot.log
 signals.json
+signals_morning.json
 briefing_state.json
 trades.json
 # Backtest output files (reproducible, not committed)

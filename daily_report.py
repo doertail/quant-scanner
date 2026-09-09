@@ -28,6 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 SIGNALS = BASE_DIR / "signals.json"
+MORNING = BASE_DIR / "signals_morning.json"  # 23:00 스캔 직전 run_scanner.sh가 뜬 07:30치
 PORTFOLIO = BASE_DIR / "portfolio.json"
 FORWARD = BASE_DIR / "forward_equity.json"
 SYNC_STATE = BASE_DIR / "toss_sync_state.json"  # toss_sync.py --apply 마지막 성공 날짜
@@ -60,10 +61,22 @@ def sync_warning(sync_date) -> str:
     return f"⚠️ 토스 동기화 {ago} — 보유·현금이 실계좌와 다를 수 있다"
 
 
+# 23:00 스캔은 개장 30분 뒤 인트라데이라 07:30(종가) 스캔과 후보가 갈린다. 백테스트는
+# 전부 종가 기준이므로 둘 다 뜬 종목이 원본 신호다. 날짜가 다르면(=아침치가 아니면) 조용히 무시.
+def morning_tickers(date: str) -> set:
+    m = _load(MORNING, {})
+    if m.get("date") != date:
+        return set()
+    ent = m.get("entries", {}) or {}
+    return {c.get("ticker") for s in ("A", "B", "C", "D") for c in (ent.get(s) or [])}
+
+
 def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
                  prices: dict | None = None, megadip_lines: list | None = None,
-                 risk_line: str | None = None, sync_line: str | None = None) -> str:
+                 risk_line: str | None = None, sync_line: str | None = None,
+                 confirmed: set | None = None) -> str:
     prices = prices or {}
+    confirmed = confirmed or set()
     r = signals.get("regime", {})
     date = signals.get("date", datetime.today().strftime("%Y-%m-%d"))
     L = [f"📊 **일일 리포트 {date}**{stale_warning(date)}"]
@@ -84,14 +97,22 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
     if not exits:
         L.append("매도 신호 없음")
     ent = signals.get("entries", {}) or {}
-    cands = [(c, s) for s in ("A", "B", "C", "D") for c in (ent.get(s) or [])[:3]]
-    for c, s in cands[:6]:
+    # 순위는 전략 **안에서만** 매긴다. A는 RSI 역수, B는 6M 랭크 기반이라 점수 스케일이 달라
+    # 섞어서 줄 세우면 항상 B가 이긴다 — 신호가 아니라 공식 차이다.
+    cands = [(c, f"{s}{i+1}") for s in ("A", "B", "C", "D")
+             for i, c in enumerate((ent.get(s) or [])[:3])]
+    for c, rank in cands[:6]:
         rsi = c.get("rsi")
         rsi_s = f"RSI {rsi:.0f}" if isinstance(rsi, (int, float)) else ""
-        L.append(f"🟢 매수  {str(c.get('ticker','?')):<5}  {s}  {rsi_s}")
+        sc = c.get("score")
+        sc_s = f"{sc:.2f}" if isinstance(sc, (int, float)) else " -  "
+        mark = " ✅" if c.get("ticker") in confirmed else ""
+        L.append(f"🟢 매수  {str(c.get('ticker','?')):<5}  {rank} {sc_s}  {rsi_s}{mark}")
     if not cands:
         L.append("진입 후보 없음")
     L.append("```")
+    if confirmed and cands:
+        L.append("✅ = 아침 종가 스캔에도 있던 종목 (백테스트와 같은 기준) · A1 = 전략 내 1순위")
 
     # 2. 보유 — 티커/손익 열 맞춰서 세로로 훑게
     cash = signals.get("portfolio_cash")
@@ -194,7 +215,8 @@ def main():
 
     report = build_report(signals, holdings, fwd_last, prices,
                           megadip_lines=megadip_lines, risk_line=risk_line,
-                          sync_line=sync_warning(_load(SYNC_STATE, {}).get("date")))
+                          sync_line=sync_warning(_load(SYNC_STATE, {}).get("date")),
+                          confirmed=morning_tickers(signals.get("date")))
 
     # 뉴스: 전용 웹훅(#경제)이 있으면 그쪽으로 **따로** 보낸다.
     # 그래야 1900자를 리포트와 나눠 쓰지 않아서 요약까지 붙은 기사를 여러 건 실을 수 있다.
