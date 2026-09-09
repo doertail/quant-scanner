@@ -147,6 +147,11 @@ Re-run 2026-09-07 (window 2005-01-03 → 2026-09-04, 5,453 trading days).
 | **I: Panic-buy + hold forever** | **$510K** | **+7.82%** | −24.77% | 3.3y | **0.564** | — | — | — | — |
 | [Benchmark] SPY+QQQ B&H | **$1,034K** | **+11.40%** | −43.47% | 3.5y | **0.622** | — | — | — | full |
 
+> ⚠️ **아래 combined 줄은 무효다 (2026-09-10 확인).** `backtest_v4.py`의 유니버스 사본이
+> 옛 위키 URL을 물고 빈 리스트를 반환해서, 이 실행은 **B 슬리브가 통째로 빠진 채** 돌았다.
+> 3,574 = A 3500 + C 36 + D 38 + **B 0**. 커밋 메시지가 CAGR 하락을 슬리피지 탓으로 돌린 것도
+> 오진이었다. 위 §5 표의 C~I 행은 SPY/QQQ만 쓰므로 영향 없다. 재실행 후 갱신할 것.
+
 Full combined portfolio (A+B+C): $640K, CAGR +8.96%, MDD −32.07%
 (underwater 864 trading days ≈ 3.4y), Sharpe 0.524, Sortino 0.616, 3,574 trades, 76.0% win.
 

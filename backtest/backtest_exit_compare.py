@@ -5,10 +5,14 @@
 """
 import yfinance as yf
 import pandas as pd
-import requests
 import logging
+import os
+import sys
 from datetime import datetime
-from io import StringIO
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from universe import get_sp500_tickers
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s  %(message)s', datefmt='%H:%M:%S')
 log = logging.getLogger(__name__)
@@ -27,16 +31,6 @@ A_ATR_TIGHT  = 1.5
 RSI_PERIOD   = 14
 ATR_PERIOD   = 14
 QQQ_MA_PERIOD= 200
-
-
-def get_sp500_tickers():
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    resp = requests.get('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', headers=headers)
-    resp.raise_for_status()
-    for table in pd.read_html(StringIO(resp.text)):
-        if 'Symbol' in table.columns:
-            return table['Symbol'].str.replace('.', '-', regex=False).tolist()
-    raise ValueError("S&P 500 ticker 테이블 없음")
 
 
 def compute_indicators(df):

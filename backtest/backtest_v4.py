@@ -15,15 +15,20 @@ scanner_v4와 동일한 로직:
 """
 
 import logging
+import os
+import sys
 from datetime import datetime
-from io import StringIO
 
 import numpy as np
 import pandas as pd
-import requests
 import yfinance as yf
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from btlib import calc_stats, total_cost
+# 유니버스는 universe.py 단일 출처. 여기 있던 사본이 옛 위키 URL을 물고 조용히
+# []를 반환해서 B 슬리브가 두 달간 통째로 비활성이었다 (2026-07-10 ~ 09-10).
+from universe import get_nasdaq100_tickers, get_sp500_tickers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,32 +102,6 @@ HYG_MA_PERIOD = 50
 DCA_BULL     = 20.0
 DCA_BEAR     = 100.0
 DCA_SIDEWAYS = 50.0
-
-
-# ─── 티커 수집 ────────────────────────────────────────────────────────────────
-
-def get_sp500_tickers() -> list[str]:
-    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
-    resp = requests.get(
-        'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies',
-        headers=headers, timeout=15,
-    )
-    for table in pd.read_html(StringIO(resp.text)):
-        if 'Symbol' in table.columns:
-            return table['Symbol'].str.replace('.', '-', regex=False).tolist()
-    return []
-
-
-def get_nasdaq100_tickers() -> list[str]:
-    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
-    resp = requests.get(
-        'https://en.wikipedia.org/wiki/Nasdaq-100',
-        headers=headers, timeout=15,
-    )
-    for table in pd.read_html(StringIO(resp.text)):
-        if 'Ticker' in table.columns:
-            return table['Ticker'].str.replace('.', '-', regex=False).tolist()
-    return []
 
 
 # ─── 지표 계산 ─────────────────────────────────────────────────────────────────

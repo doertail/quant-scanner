@@ -18,15 +18,18 @@ backtest_b_ndx_regime.py
 """
 
 import logging
+import os
+import sys
 from datetime import datetime
-from io import StringIO
 
 import numpy as np
 import pandas as pd
-import requests
 import yfinance as yf
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from btlib import calc_stats   # 중복 복붙 제거 — 단일 출처
+from universe import get_nasdaq100_tickers, get_sp500_tickers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,32 +73,6 @@ VIX_SWEET_LOW          = 20.0
 VIX_DANGER_LOW         = 25.0
 VIX_PANIC              = 30.0
 HYG_MA_PERIOD          = 50
-
-
-# ─── 티커 수집 ────────────────────────────────────────────────────────────────
-
-def get_sp500_tickers() -> list[str]:
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    resp = requests.get(
-        'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies',
-        headers=headers, timeout=15,
-    )
-    for table in pd.read_html(StringIO(resp.text)):
-        if 'Symbol' in table.columns:
-            return table['Symbol'].str.replace('.', '-', regex=False).tolist()
-    return []
-
-
-def get_nasdaq100_tickers() -> list[str]:
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    resp = requests.get(
-        'https://en.wikipedia.org/wiki/Nasdaq-100',
-        headers=headers, timeout=15,
-    )
-    for table in pd.read_html(StringIO(resp.text)):
-        if 'Ticker' in table.columns:
-            return table['Ticker'].str.replace('.', '-', regex=False).tolist()
-    return []
 
 
 # ─── 지표 계산 ───────────────────────────────────────────────────────────────
