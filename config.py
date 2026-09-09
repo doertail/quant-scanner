@@ -69,6 +69,16 @@ A_POSITION_PCT = 10.0
 B_POSITION_PCT = 10.0
 D_POSITION_PCT = 10.0
 
+# 슬리브별 동시 보유 정원 (A/B를 점수로 경쟁시키지 않기 위한 자본 배분 원칙)
+#   근거(BACKTESTS.md §10 Result B): A를 빼면 CAGR은 그대로(22.28% vs 22.06%)인데
+#   Sharpe 0.95→0.56, MDD −33.6%→−48.7%. A는 수익엔진이 아니라 낙폭 완충재다.
+#   반면 평균 수익은 B가 높다(+4.84% vs +2.64%) — 점수를 통일해 EV로 비교하면
+#   무조건 B만 사게 되고, 그건 완충재를 버리는 것이다. 그래서 비교 대신 정원.
+#   비율은 전략별 거래 수(A 2268 : B 695 ≈ 3:1)를 A의 짧은 보유기간으로 할인해 2:1.
+#   ponytail: 동시보유 비율을 직접 잰 백테스트는 없다. 재려면 슬리브별 평균 보유일 필요.
+A_MAX_SLOTS = 4
+B_MAX_SLOTS = 2
+
 # 전략 D — 크립토 관련주 모멘텀 (ETH>MA50 레짐, CAGR +17.62%, Sharpe 0.813)
 D_TICKERS    = ['MSTR', 'BLOK', 'MARA', 'RIOT', 'COIN', 'BITO']
 D_MOM_LONG   = 126

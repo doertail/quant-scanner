@@ -87,6 +87,21 @@ def test_morning_tickers_ignores_other_day(tmp_path, monkeypatch):
     assert dr.morning_tickers("2026-06-24") == set()   # 07:30 실행엔 파일이 없다
 
 
+def test_slots_left_ignores_core():
+    # Core(지수 DCA)는 슬리브가 아니다. HSY 하나가 A 정원을 먹는다.
+    assert dr.slots_left(HOLD) == {"A": dr.A_MAX_SLOTS - 1, "B": dr.B_MAX_SLOTS}
+    assert dr.slots_left({})["A"] == dr.A_MAX_SLOTS
+
+
+def test_over_quota_candidates_marked():
+    # 정원이 차면 점수가 아무리 높아도 안 산다 — A/B를 점수로 경쟁시키지 않기 위한 원칙.
+    full = {f"X{i}": {"strategy": "A"} for i in range(dr.A_MAX_SLOTS)}
+    r = dr.build_report(SIG, full, FWD)
+    assert "⛔ 정원참 DOW" in r and "⛔ 정원참 GD" in r    # A 자리 없음
+    assert "🟢 매수  NBIS" in r                           # B는 비어 있으니 산다
+    assert "남은 정원 A 0" in r
+
+
 def test_stale_warning():
     from datetime import datetime, timedelta
     import daily_report as dr

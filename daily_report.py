@@ -23,6 +23,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import signals_io
+from config import A_MAX_SLOTS, B_MAX_SLOTS
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -71,6 +72,16 @@ def morning_tickers(date: str) -> set:
     return {c.get("ticker") for s in ("A", "B", "C", "D") for c in (ent.get(s) or [])}
 
 
+# A/B 점수는 스케일이 달라 비교가 안 된다. 통일해도 평균수익이 높은 B가 항상 이기고,
+# 그러면 낙폭 완충재인 A가 사라진다(BACKTESTS.md §10: A 제외 시 Sharpe 0.95→0.56).
+# 그래서 비교 대신 정원제 — 슬리브마다 자리를 정해두고 그 안에서만 순위로 고른다.
+# Core(지수 DCA)는 슬리브가 아니라 세지 않는다.
+def slots_left(holdings: dict) -> dict:
+    used = [p.get("strategy") for p in holdings.values()]
+    return {"A": max(0, A_MAX_SLOTS - used.count("A")),
+            "B": max(0, B_MAX_SLOTS - used.count("B"))}
+
+
 def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
                  prices: dict | None = None, megadip_lines: list | None = None,
                  risk_line: str | None = None, sync_line: str | None = None,
@@ -101,16 +112,24 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
     # 섞어서 줄 세우면 항상 B가 이긴다 — 신호가 아니라 공식 차이다.
     cands = [(c, f"{s}{i+1}") for s in ("A", "B", "C", "D")
              for i, c in enumerate((ent.get(s) or [])[:3])]
+    # 정원: A와 B는 점수로 경쟁시키지 않고 자리를 나눠 갖는다 (config 주석에 근거).
+    # 순위가 남은 자리보다 뒤면 점수가 아무리 높아도 오늘은 안 산다.
+    left = slots_left(holdings)
     for c, rank in cands[:6]:
         rsi = c.get("rsi")
         rsi_s = f"RSI {rsi:.0f}" if isinstance(rsi, (int, float)) else ""
         sc = c.get("score")
         sc_s = f"{sc:.2f}" if isinstance(sc, (int, float)) else " -  "
         mark = " ✅" if c.get("ticker") in confirmed else ""
-        L.append(f"🟢 매수  {str(c.get('ticker','?')):<5}  {rank} {sc_s}  {rsi_s}{mark}")
+        cap = left.get(rank[0])
+        head = "⛔ 정원참" if cap is not None and int(rank[1:]) > cap else "🟢 매수 "
+        L.append(f"{head} {str(c.get('ticker','?')):<5}  {rank} {sc_s}  {rsi_s}{mark}")
     if not cands:
         L.append("진입 후보 없음")
     L.append("```")
+    if cands:
+        L.append(f"🎯 남은 정원 A {left['A']}/{A_MAX_SLOTS} · B {left['B']}/{B_MAX_SLOTS} — "
+                 "A·B는 서로 경쟁 안 시킨다(점수 공식이 다름)")
     if confirmed and cands:
         L.append("✅ = 아침 종가 스캔에도 있던 종목 (백테스트와 같은 기준) · A1 = 전략 내 1순위")
 
