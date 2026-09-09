@@ -1,0 +1,44 @@
+10:41:23  INFO  데이터/지표 준비 (1회)...
+setup 38s
+stock_a=501 stock_b=0 all_dates=5454 dates(2005+)=5454 2005-01-03~2026-09-08
+
+=== 1. REGIME 분포 (2005+) ===
+regime
+BULL        2627
+SIDEWAYS    1739
+BEAR        1088
+
+=== vix_zone 분포 ===
+vix_zone
+NORMAL    3684
+SWEET      890
+PANIC      449
+DANGER     431
+
+allow_a True: 4666 / 5454
+allow_b True: 2355 / 5454
+BULL 일수:    2627
+vix NaN 일수: 0
+breadth NaN:  0
+hyg NaN:      570
+
+DANGER 차단:      431
+PANIC 차단:       449
+SWEET&HYG약 차단: 357
+non-BULL 차단:    2827
+
+=== 2. B 게이트 퍼널 (allow_b True 2355일) ===
+mom_rank 인덱스에 없는 allow_b 날: 2355
+  가격 존재                  종목-일 합계         0  후보>=1인 날      0/0  일평균 nan
+  + Close>MA200          종목-일 합계         0  후보>=1인 날      0/0  일평균 nan
+  + Close>MA20           종목-일 합계         0  후보>=1인 날      0/0  일평균 nan
+  + rank/rs NaN아님        종목-일 합계         0  후보>=1인 날      0/0  일평균 nan
+  + rank>=0.75           종목-일 합계         0  후보>=1인 날      0/0  일평균 nan
+  + rs>0 (최종)            종목-일 합계         0  후보>=1인 날      0/0  일평균 nan
+
+rank 전체 NaN 비율: nan
+rs   전체 NaN 비율: nan
+rank max/일 평균:   nan
+
+=== 3. 베이스라인 재현 (A10/B10) ===
+slots 경로(regime 사전계산): CAGR 8.96% Sharpe 0.52 MDD -32.1% | A 3500 B 0 C 36 D 38  (106s)

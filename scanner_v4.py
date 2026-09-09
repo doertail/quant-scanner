@@ -57,7 +57,7 @@ from config import (
     EARNINGS_BLOCK_DAYS, EARNINGS_FILTER_ENABLE,
     HYG_MA_PERIOD,
     LOOKBACK_DAYS,
-    NEWS_FILTER_ENABLE, NEWS_FILTER_TOP_N,
+    NEWS_FILTER_ENABLE, NEWS_FILTER_TOP_N, NEWS_LLM_MODEL,
     QQQ_MA_PERIOD,
     VIX_C_EXIT, VIX_DANGER_LOW, VIX_PANIC, VIX_RV_HIGH, VIX_RV_LOW, VIX_SWEET_LOW,
 )
@@ -595,40 +595,29 @@ def main() -> None:
     # ── 6b. 뉴스 감성 필터 ────────────────────────────────────────────────────
     _skipped_all: list[dict] = []
     if NEWS_FILTER_ENABLE and (entry_a or entry_b or entry_d):
-        _news_api_key = os.getenv('GEMINI_API_KEY')
-        if _news_api_key:
-            _news_t0 = datetime.now()
-            log.info("뉴스 감성 필터 시작")
-            _skipped_a: list[dict] = []
-            _skipped_b: list[dict] = []
-            _skipped_d: list[dict] = []
-            try:
-                _news_client = genai.Client(
-                    api_key=_news_api_key, http_options={'timeout': 20_000}
-                )
-                _news_model = 'gemini-2.5-flash'
-                entry_a, _skipped_a = filter_candidates_by_sentiment(
-                    entry_a, _news_client, _news_model,
-                    top_n=NEWS_FILTER_TOP_N, logger=log,
-                )
-                entry_b, _skipped_b = filter_candidates_by_sentiment(
-                    entry_b, _news_client, _news_model,
-                    top_n=NEWS_FILTER_TOP_N, logger=log,
-                )
-                entry_d, _skipped_d = filter_candidates_by_sentiment(
-                    entry_d, _news_client, _news_model,
-                    top_n=NEWS_FILTER_TOP_N, logger=log,
-                )
-            except Exception as _e:
-                log.warning(f"뉴스 감성 필터 오류 (스킵): {_e}")
-            _skipped_all = _skipped_a + _skipped_b + _skipped_d
-            _news_elapsed = (datetime.now() - _news_t0).total_seconds()
-            log.info(
-                f"뉴스 감성 필터 완료 — {_news_elapsed:.1f}s 소요 "
-                f"| SKIP {len(_skipped_all)}개 제거"
+        _news_t0 = datetime.now()
+        log.info(f"뉴스 감성 필터 시작 (로컬 {NEWS_LLM_MODEL})")
+        _skipped_a: list[dict] = []
+        _skipped_b: list[dict] = []
+        _skipped_d: list[dict] = []
+        try:
+            entry_a, _skipped_a = filter_candidates_by_sentiment(
+                entry_a, NEWS_LLM_MODEL, top_n=NEWS_FILTER_TOP_N, logger=log,
             )
-        else:
-            log.info("GEMINI_API_KEY 없음 — 뉴스 감성 필터 스킵")
+            entry_b, _skipped_b = filter_candidates_by_sentiment(
+                entry_b, NEWS_LLM_MODEL, top_n=NEWS_FILTER_TOP_N, logger=log,
+            )
+            entry_d, _skipped_d = filter_candidates_by_sentiment(
+                entry_d, NEWS_LLM_MODEL, top_n=NEWS_FILTER_TOP_N, logger=log,
+            )
+        except Exception as _e:
+            log.warning(f"뉴스 감성 필터 오류 (스킵): {_e}")
+        _skipped_all = _skipped_a + _skipped_b + _skipped_d
+        _news_elapsed = (datetime.now() - _news_t0).total_seconds()
+        log.info(
+            f"뉴스 감성 필터 완료 — {_news_elapsed:.1f}s 소요 "
+            f"| SKIP {len(_skipped_all)}개 제거"
+        )
 
     # ── 6c. 포지션 사이징 ─────────────────────────────────────────────────────
     for c in entry_a:

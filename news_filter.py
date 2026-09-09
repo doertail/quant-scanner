@@ -7,7 +7,7 @@ news_filter.py — 신호 후보 필터링 (어닝스 캘린더 + 뉴스 감성)
      어닝스 갭 리스크로 RSI 신호가 거짓이 되기 쉬운 구간.
 
   2. 뉴스 감성 (filter_candidates_by_sentiment)
-     yfinance 뉴스 + Gemini로 단기 악재 감지.
+     yfinance 뉴스 + 로컬 LLM(Ollama)으로 단기 악재 감지.
      PASS   : 중립/긍정 또는 판단 불가 (기본값, 트레이딩 차단 안 함)
      REDUCE : 실적 하향·소송·규제 리스크 등 단기 불확실성 → 목록 유지 + 🔶 표시
      SKIP   : 파산·SEC조사·대규모 리콜 등 명확한 악재 → 목록에서 제거
@@ -19,9 +19,12 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 
+import requests
 import yfinance as yf
 
 _log = logging.getLogger(__name__)
+
+NEWS_LLM_URL = "http://localhost:11434"
 
 _SENTIMENT_PASS: dict = {"verdict": "PASS", "score": 0.5, "summary": "분석 불가 (기본값)"}
 _EARNINGS_UNKNOWN: dict = {"is_near": False, "date": None, "days_until": None}
@@ -125,8 +128,19 @@ def filter_candidates_by_earnings(
 # ─── 뉴스 감성 필터 ──────────────────────────────────────────────────────────
 
 
-def _parse_gemini_json(text: str) -> dict:
-    """Gemini 응답 텍스트에서 JSON 파싱 + 유효성 검사."""
+_VERDICT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["PASS", "REDUCE", "SKIP"]},
+        "score":   {"type": "number"},
+        "summary": {"type": "string"},
+    },
+    "required": ["verdict", "score", "summary"],
+}
+
+
+def _parse_verdict_json(text: str) -> dict:
+    """LLM 응답 텍스트에서 JSON 파싱 + 유효성 검사."""
     try:
         clean = re.sub(r'```(?:json)?\s*', '', text).strip().rstrip('`').strip()
         data = json.loads(clean)
@@ -158,11 +172,12 @@ def get_ticker_news(ticker: str, max_items: int = 8) -> list[dict]:
 def analyze_news_sentiment(
     ticker: str,
     news_items: list[dict],
-    gemini_client,
     model_name: str,
+    url: str = NEWS_LLM_URL,
+    timeout: float = 25.0,
 ) -> dict:
     """
-    Gemini로 뉴스 감성 분석.
+    로컬 LLM(Ollama)으로 뉴스 감성 분석.
     반환: {"verdict": "PASS"|"REDUCE"|"SKIP", "score": float, "summary": str}
     모든 오류는 _SENTIMENT_PASS 폴백.
     """
@@ -199,15 +214,21 @@ verdict rules:
 score: 0.0 (very negative) to 1.0 (very positive), 0.5 = neutral
 """
 
-    def _call() -> str:
-        resp = gemini_client.models.generate_content(model=model_name, contents=prompt)
-        return resp.text
-
     try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_call)
-            text = future.result(timeout=15)
-        return _parse_gemini_json(text)
+        resp = requests.post(
+            f"{url}/api/chat",
+            json={
+                'model':    model_name,
+                'stream':   False,
+                'think':    False,   # qwen3 계열 사고모드 — 켜면 지연 3배에 JSON도 깨진다
+                'format':   _VERDICT_SCHEMA,
+                'options':  {'temperature': 0, 'num_predict': 200},
+                'messages': [{'role': 'user', 'content': prompt}],
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return _parse_verdict_json(resp.json()['message']['content'])
     except Exception as e:
         _log.debug(f"{ticker} 감성 분석 오류: {e}")
         return _SENTIMENT_PASS.copy()
@@ -215,10 +236,10 @@ score: 0.0 (very negative) to 1.0 (very positive), 0.5 = neutral
 
 def filter_candidates_by_sentiment(
     candidates: list[dict],
-    gemini_client,
     model_name: str,
     top_n: int = 5,
     logger=None,
+    url: str = NEWS_LLM_URL,
 ) -> tuple[list, list]:
     """
     상위 top_n 후보에 대해 뉴스 감성 분석 수행.
@@ -234,7 +255,8 @@ def filter_candidates_by_sentiment(
         return candidates, []
 
     lg = logger or _log
-    deadline_ts = datetime.now().timestamp() + 28.0
+    # 로컬 추론은 1건 3~4s(콜드 7s) — 5건이면 여유 있고, 느려지면 나머지는 PASS로 흘린다
+    deadline_ts = datetime.now().timestamp() + 60.0
 
     to_analyze = candidates[:top_n]
     rest = candidates[top_n:]
@@ -249,13 +271,13 @@ def filter_candidates_by_sentiment(
         ticker = c['ticker']
 
         if datetime.now().timestamp() > deadline_ts:
-            lg.warning(f"뉴스 필터 28s 데드라인 초과 — {ticker} 이후 PASS 처리")
+            lg.warning(f"뉴스 필터 60s 데드라인 초과 — {ticker} 이후 PASS 처리")
             c['sentiment'] = _SENTIMENT_PASS.copy()
             filtered.append(c)
             continue
 
         news_items = get_ticker_news(ticker)
-        sentiment = analyze_news_sentiment(ticker, news_items, gemini_client, model_name)
+        sentiment = analyze_news_sentiment(ticker, news_items, model_name, url)
         c['sentiment'] = sentiment
 
         verdict = sentiment.get('verdict', 'PASS')
