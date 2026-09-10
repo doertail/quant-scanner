@@ -548,6 +548,42 @@ as bias-inflated.
 
 ---
 
+## 11. Sleeve Slot Caps — A:B Ratio Sweep (`backtest_slots.py`)
+
+Run 2026-09-10, after commit `b2f1adc` removed four stale copies of the NDX100 scraper.
+Run 1 (2026-09-09) is void: every cell had B = 0 trades because `backtest_v4`'s private
+copy returned an empty universe. Gate now aborts unless NDX resolves to ~102 tickers.
+
+### Result — measured concurrency (caps at 10/10, the Sharpe-0.95 mix)
+
+| Sleeve | Trades | Avg hold | Concurrent slots |
+|---|---|---|---|
+| A | 2,316 | 15 d | 4.4 |
+| B | 727 | 38 d | 3.5 |
+
+**A:B = 1.26 : 1**, not the 2:1 that shipped. Trade count said 3:1, but B holds 2.5× longer,
+so it occupies nearly as many slots as A. Sizing the ratio off trade count underweighted B.
+
+### Result — 7×5 cap sweep
+
+Best Sharpe A15/B10 = 0.97; best Calmar A8/B10 = 0.59. **Both discarded**: measured B
+concurrency in those cells is 3.4–3.5, i.e. the B cap never binds (dead cell), and the
+direction — "give B more room" — is the same direction as NDX100 survivorship bias (§10).
+
+Holding B = 2 and sweeping A only is bias-free, since it never widens the biased sleeve:
+
+| A cap | 2 | 4 | 6 | 8 | 10 | 15 |
+|---|---|---|---|---|---|---|
+| Sharpe | 0.46 | 0.55 | 0.65 | **0.85** | 0.86 | 0.82 |
+| MDD | −37.8% | −36.9% | −33.1% | **−28.6%** | −30.1% | −32.5% |
+
+A8/B2 has the lowest MDD of all 35 cells.
+
+**Action taken**: `A_MAX_SLOTS 4 → 8`, `B_MAX_SLOTS` unchanged at 2. Absolute slot counts
+are $100k-scale; only the ratio transfers to the paper account.
+
+---
+
 ## Caveats Common to All Backtests
 
 - **Survivorship bias**: ticker lists used today; delisted names absent.

@@ -32,3 +32,5 @@ execution.log
 # btlib이 받아두는 ^IRX 무위험수익률 캐시 (재생성 가능)
 backtest/.irx_cache.csv
 toss_sync_state.json
+forward_equity_*.json
+backtest/*.log
