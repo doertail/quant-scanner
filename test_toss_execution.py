@@ -68,15 +68,27 @@ def test_process_entries_caps_and_cash():
     }
     held = {}
     intents = te.process_entries(entries, regime, held, account_value=100000.0,
-                                 usd_cash=100000.0, price_fn=price_fn)
+                                 usd_cash=100000.0, price_fn=price_fn, positions={})
     tickers = {i['ticker'] for i in intents}
     assert tickers == {'DOW', 'AAPL'}
     assert all(i['side'] == 'buy' and i['qty'] >= 1 for i in intents)
+
+    # 슬리브 정원이 찼으면 레짐이 허용해도 안 산다. 이 상한은 toss_execution.main이
+    # 아니라 process_entries 안에 있어야 한다 — forward_test.py가 이 함수를 직접
+    # 호출하는 두 번째 경로이고, 상한이 main에 있던 동안 정원을 통째로 무시했다.
+    full_a = {f'X{i}': {'strategy': 'A'} for i in range(te.A_MAX_SLOTS)}
+    full_b = {f'Y{i}': {'strategy': 'B'} for i in range(te.B_MAX_SLOTS)}
+    only_b = te.process_entries(entries, regime, held, account_value=100000.0,
+                                usd_cash=100000.0, price_fn=price_fn, positions=full_a)
+    assert {i['ticker'] for i in only_b} == {'AAPL'}
+    only_a = te.process_entries(entries, regime, held, account_value=100000.0,
+                                usd_cash=100000.0, price_fn=price_fn, positions=full_b)
+    assert {i['ticker'] for i in only_a} == {'DOW'}
 
 def test_process_entries_blocks_when_cash_too_low():
     price_fn = lambda t: 30.0
     regime = {'allow_entry_a': True, 'allow_entry_b': False}
     entries = {'A': [{'ticker': 'DOW', 'close': 30.0, 'stop': 26.7, 'rsi': 28.7}], 'B': [], 'C': []}
     intents = te.process_entries(entries, regime, {}, account_value=100000.0,
-                                 usd_cash=5.0, price_fn=price_fn)
+                                 usd_cash=5.0, price_fn=price_fn, positions={})
     assert intents == []   # 예수금 $5 < 1주 가격 → 진입 불가

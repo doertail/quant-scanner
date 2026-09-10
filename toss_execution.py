@@ -23,6 +23,7 @@ from toss_client import TossClient, TossAPIError
 # DRY: 검증된 순수 안전장치/사이징 함수 재사용
 from execution_layer import check_price_sanity, count_positions_by_strategy, calc_shares
 import signals_io
+from config import A_MAX_SLOTS, B_MAX_SLOTS
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / '.env')
@@ -40,9 +41,6 @@ SIGNALS_FILE   = BASE_DIR / 'signals.json'
 PORTFOLIO_FILE = BASE_DIR / 'portfolio.json'
 KILL_SWITCH    = BASE_DIR / 'kill_switch.flag'
 EXEC_LOG       = BASE_DIR / 'toss_execution_history.json'
-
-MAX_POS_A = 10
-MAX_POS_B = 10
 
 
 def decide_exit_qty(signal: str, shares: float) -> float:
@@ -151,13 +149,18 @@ def _entry_one(cand, strategy, held, account_value, usd_cash, price_fn, intents)
     return usd_cash - cost
 
 
-def process_entries(entries, regime, held, account_value, usd_cash, price_fn) -> list:
-    """매수 의도 리스트(드라이런). A/B 각 1건, C 전체. 예수금 차감 반영."""
+def process_entries(entries, regime, held, account_value, usd_cash, price_fn, positions) -> list:
+    """매수 의도 리스트(드라이런). A/B 각 1건, C 전체. 예수금 차감 반영.
+
+    positions: strategy 필드를 가진 보유 dict(실계좌는 portfolio.json, 페이퍼는 forward_paper).
+    슬리브 정원 상한을 여기서 건다 — 호출자 쪽에 두면 이 함수를 직접 쓰는 forward_test가
+    정원을 통째로 무시한다. 실제로 그랬다."""
     intents = []
-    if regime.get('allow_entry_a'):
+    counts = count_positions_by_strategy(positions)
+    if regime.get('allow_entry_a') and counts['A'] < A_MAX_SLOTS:
         for cand in (entries.get('A') or [])[:1]:
             usd_cash = _entry_one(cand, 'A', held, account_value, usd_cash, price_fn, intents)
-    if regime.get('allow_entry_b'):
+    if regime.get('allow_entry_b') and counts['B'] < B_MAX_SLOTS:
         for cand in (entries.get('B') or [])[:1]:
             usd_cash = _entry_one(cand, 'B', held, account_value, usd_cash, price_fn, intents)
     for cand in (entries.get('C') or []):
@@ -248,14 +251,9 @@ def main():
 
         regime  = signals.get('regime', {})
         exits   = process_exits(signals.get('exits', []), snap['held'], portfolio)
-        # 포지션 캡: portfolio.json의 전략별 카운트로 차단
-        counts = count_positions_by_strategy(portfolio)
-        if counts['A'] >= MAX_POS_A:
-            regime = {**regime, 'allow_entry_a': False}
-        if counts['B'] >= MAX_POS_B:
-            regime = {**regime, 'allow_entry_b': False}
         entries = process_entries(signals.get('entries', {}), regime, snap['held'],
-                                  snap['account_value_usd'], snap['usd_cash'], price_fn)
+                                  snap['account_value_usd'], snap['usd_cash'], price_fn,
+                                  portfolio)
         intents = exits + entries
     except (TossAPIError, KeyError, IndexError) as e:
         log.error(f'토스 조회 실패 — 중단: {e}'); sys.exit(1)

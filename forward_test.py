@@ -147,7 +147,7 @@ def main():
             exits = te.process_exits(signals.get('paper_exits', []), held_view, held)
             paper_value = mark_to_market(paper, price_cache)
             entries = te.process_entries(signals.get('entries', {}), regime, held_view,
-                                         paper_value, paper['cash'], price_fn)
+                                         paper_value, paper['cash'], price_fn, held)
             intents = exits + entries
 
         # 체결가 맵 (의도 종목 가격 확보)

@@ -34,6 +34,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 import signals_io
+from config import A_MAX_SLOTS, B_MAX_SLOTS
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / '.env')
@@ -56,8 +57,6 @@ KILL_SWITCH    = BASE_DIR / 'kill_switch.flag'
 EXECUTION_LOG  = BASE_DIR / 'execution_history.json'
 
 MAX_LOSS_PCT    = 3.0   # 일일 최대 손실 한도 (%)
-MAX_POS_A       = 10    # 전략 A 최대 포지션 수
-MAX_POS_B       = 10    # 전략 B 최대 포지션 수
 PRICE_DRIFT_PCT = 20.0  # scanner 가격 vs 현재가 허용 차이 (%)
 POSITION_PCT_A  = 10.0  # 전략 A 종목당 배분 (% of 총자산)
 POSITION_PCT_B  = 10.0  # 전략 B 종목당 배분 (% of 총자산)
@@ -397,7 +396,7 @@ def main() -> None:
         log.info(f"--- 신규 진입 (현재 포지션: A={pos_counts['A']}, B={pos_counts['B']}) ---")
 
         # 전략 A: RSI 최저 상위 1개만
-        if regime.get('allow_entry_a') and pos_counts['A'] < MAX_POS_A:
+        if regime.get('allow_entry_a') and pos_counts['A'] < A_MAX_SLOTS:
             for cand in entries.get('A', [])[:1]:
                 check_kill_switch()
                 ticker        = cand['ticker']
@@ -433,7 +432,7 @@ def main() -> None:
                     errors.append(f'진입 실패: {ticker} A')
 
         # 전략 B: RSI 최고 상위 1개만
-        if regime.get('allow_entry_b') and pos_counts['B'] < MAX_POS_B:
+        if regime.get('allow_entry_b') and pos_counts['B'] < B_MAX_SLOTS:
             for cand in entries.get('B', [])[:1]:
                 check_kill_switch()
                 ticker        = cand['ticker']
