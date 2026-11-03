@@ -328,7 +328,7 @@ def test_explains_move_defaults_to_reject_when_llm_down(monkeypatch):
 def test_unverified_comovement_says_so(monkeypatch):
     """설명 기사를 못 찾으면 아무 시황 기사나 붙이지 않고 못 찾았다고 말한다."""
     monkeypatch.setattr(nb, "find_sector_article", lambda *a, **k: None)
-    ch = {"A": -4.0, "B": -3.5, "C": -3.0}
+    ch = {"111111.KS": -4.0, "222222.KS": -3.5, "333333.KS": -3.0}
     lines, _ = nb.comovement_lines(ch, {}, datetime(2026, 9, 1, tzinfo=timezone.utc))
     assert any("못 찾음" in l for l in lines)
     assert not any("](<" in l for l in lines)      # 링크를 억지로 안 붙인다
@@ -474,3 +474,8 @@ def test_macro_without_key_is_silent(monkeypatch):
     monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
     assert nb.fetch_macro() == []
     assert nb.macro_lines() == []
+
+
+def test_us_tickers_never_form_a_kospi_comovement():
+    ch = {"TEM": -7.2, "HIMS": -6.7, "CRWD": -4.1, nb.KOSPI: -0.2}
+    assert nb.comovement_lines(ch, {}, datetime(2026, 9, 1, tzinfo=timezone.utc)) == ([], set())

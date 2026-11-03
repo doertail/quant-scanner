@@ -54,3 +54,4 @@ run_thesis_monitor.sh
 panic_state.json
 standing_orders.json
 personal_execution_history.json
+watchlist.json

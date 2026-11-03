@@ -216,7 +216,7 @@ def fetch_us_news(ticker: str, cutoff: datetime, limit: int) -> list:
             continue
         link = (it.findtext("link") or "").strip()
         if (not (title and link) or dt < cutoff or "_" in title.split()[0]
-                or ("Stock Price" in title and "Quote" in title)):
+                or re.search(r"Stock (Price|Quotes?)\b.*(News|Quote|Chart)", title)):
             continue                                # 깨진 제목("META_TITLE_QUOTE")·시세 페이지
         # RSS에는 본문이 없다 — 제목이 곧 요약 입력
         out.append({"ticker": ticker, "title": title, "publisher": publisher, "url": link,
@@ -511,7 +511,9 @@ def find_sector_article(tickers, cutoff: datetime, labels: dict | None = None,
 
 def comovement_lines(changes: dict, labels: dict, cutoff: datetime) -> tuple:
     """(줄 목록, 이미 설명된 티커 집합). 동반 이동이 없으면 ([], set())."""
-    group = detect_comovement(changes)
+    # 국내 종목끼리만 묶는다 — 비교 기준도, 설명 기사를 찾는 시황 피드도 코스피·네이버다.
+    # 미국 종목까지 섞이면 "TEM·HIMS·CRWD 동반 하락, 코스피 -0.2%"처럼 엉뚱해지고 개별 뉴스가 사라진다.
+    group = detect_comovement({t: v for t, v in changes.items() if t == KOSPI or is_kr(t)})
     if not group:
         return [], set()
 
