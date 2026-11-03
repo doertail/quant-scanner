@@ -21,8 +21,7 @@ from toss_client import TossClient, TossAPIError
 
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / "thesis_monitor_state.json"
-THESES = {
-    "CRWD": "보안 수요가 고객·ARR·현금흐름으로 이어지는지, 제품 사고와 매출 인식 문제로 신뢰가 훼손되는지",
+THESES = {  # CRWD는 2026-11-03 전량 매도로 제외 (ARR 비교 코드는 다시 살 때 쓰게 남김)
     "TSLA": "장기 사업 경쟁력과 수익성이 유지되는지",
 }
 CRWD_TERMS = ("annual recurring revenue", "net new arr", "customer retention",
