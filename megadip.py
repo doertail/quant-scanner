@@ -19,6 +19,7 @@ import sys
 from datetime import datetime, date
 from pathlib import Path
 
+import numpy as np
 import yfinance as yf
 from dotenv import load_dotenv
 
@@ -51,7 +52,9 @@ def _days_since(d: str | None) -> int | None:
     if not d:
         return None
     try:
-        return (date.today() - date.fromisoformat(d)).days
+        # 백테스트의 120은 봉(거래일) 수 — 달력일로 세면 두 달 일찍 청산 알림이 뜬다.
+        # ponytail: 평일만 세고 미국 공휴일(연 ~10일)은 무시, 오차 며칠이면 충분
+        return int(np.busday_count(date.fromisoformat(d), date.today()))
     except ValueError:
         return None
 

@@ -29,3 +29,11 @@ def test_unmanaged_watch_when_normal():
 def test_none_rsi_safe():
     assert m.classify(None, managed=True)[0] == "?"
     assert m.classify(None, managed=False)[0] == "-"
+
+
+def test_days_held_counts_trading_days():
+    # 금(10/30) → 다음 주 월(11/2): 달력 3일, 거래일 1일
+    from datetime import date
+    import numpy as np
+    assert int(np.busday_count(date(2026, 10, 30), date(2026, 11, 2))) == 1
+    assert m._days_since(date.today().isoformat()) == 0
