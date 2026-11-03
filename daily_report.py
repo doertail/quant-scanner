@@ -35,8 +35,6 @@ MORNING = BASE_DIR / "signals_morning.json"  # 23:00 스캔 직전 run_scanner.s
 PORTFOLIO = BASE_DIR / "portfolio.json"
 SYNC_STATE = BASE_DIR / "toss_sync_state.json"  # toss_sync.py --apply 마지막 성공 날짜
 DISCORD_SAFE_LEN = 1900  # notify.send_discord의 청크 크기 — 넘으면 2통으로 쪼개진다
-# 뉴스 채널은 따로라 여러 통이어도 된다 (notify가 줄 경계로 나눈다). Google News 링크 한 줄이 ~300자
-NEWS_CHANNEL_LEN = DISCORD_SAFE_LEN * 3
 NEWS_WEBHOOK_ENV = "DISCORD_NEWS_WEBHOOK_URL"  # 설정되면 뉴스를 #경제로 분리 발송
 
 
@@ -230,7 +228,7 @@ def main():
         try:
             import news_brief
             news_lines = news_brief.build_section(
-                budget=NEWS_CHANNEL_LEN if separate else DISCORD_SAFE_LEN - len(report) - 2)
+                budget=None if separate else DISCORD_SAFE_LEN - len(report) - 2)
             if news_lines and not separate:
                 report += "\n\n" + "\n".join(news_lines)
                 news_lines = None          # 본문에 이미 들어감

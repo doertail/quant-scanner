@@ -577,7 +577,7 @@ def fetch_news(tickers, hours: int = DEFAULT_HOURS, changes: dict | None = None,
     ordered = sorted(tickers, key=lambda t: abs(changes.get(t, float("nan"))) if t in changes else -1.0,
                      reverse=True)
 
-    items, seen_urls = [], set()
+    per, seen_urls = [], set()
     for t in ordered:
         if is_kr(t):
             got = fetch_naver_news(t, cutoff, MAX_PER_TICKER, label=labels.get(t))
@@ -585,10 +585,18 @@ def fetch_news(tickers, hours: int = DEFAULT_HOURS, changes: dict | None = None,
             got = fetch_us_news(t, cutoff, MAX_PER_TICKER)
         fresh = [it for it in got if it["url"] not in seen_urls]
         seen_urls.update(it["url"] for it in fresh)
-        items.extend(fresh)
+        per.append(fresh)
         if coverage is not None:
             coverage[t] = len(fresh)
-    return items[:MAX_ITEMS]
+    # 뉴스 있는 종목은 전부 1건씩은 보인다 — 잘리면 덜 움직인 종목이 매일 안 보였다.
+    # MAX_ITEMS는 2번째 기사 자리만 제한 (많이 움직인 종목부터)
+    extra = max(0, MAX_ITEMS - sum(1 for f in per if f))
+    items = []
+    for fresh in per:
+        take = 1 + min(len(fresh) - 1, extra) if fresh else 0
+        extra -= max(0, take - 1)
+        items += fresh[:take]
+    return items
 
 
 def coverage_line(tickers, coverage: dict, shown: set, covered: set,

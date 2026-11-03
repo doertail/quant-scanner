@@ -470,3 +470,12 @@ def test_same_ticker_second_article_does_not_repeat_tag():
     a, b = dict(ITEMS[0], summary="첫 기사"), dict(ITEMS[0], summary="둘째 기사", url="https://x/2")
     lines = nb.section_lines([a, b], changes={a["ticker"]: -4.27})
     assert lines[1].startswith("• `") and lines[2].startswith("   └ [둘째 기사]")
+
+
+def test_every_ticker_with_news_gets_one_and_seconds_fill_the_rest(monkeypatch):
+    monkeypatch.setattr(nb, "fetch_us_news", lambda t, c, n, **kw: [_item(t, i) for i in range(2)])
+    tickers = [f"T{i}" for i in range(nb.MAX_ITEMS + 2)]
+    items = nb.fetch_news(tickers, changes={t: -float(i) for i, t in enumerate(tickers)})
+    assert {it["ticker"] for it in items} == set(tickers)     # 자리부족으로 빠지는 종목 없음
+    few = nb.fetch_news(tickers[:6], changes={t: -float(i) for i, t in enumerate(tickers)})
+    assert len(few) == nb.MAX_ITEMS                            # 6종목 + 2번째 기사 2개
