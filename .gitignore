@@ -51,3 +51,6 @@ docs/cybersecurity-candidate-queue.md
 web_opportunity_state.json
 run_opportunity_alert.sh
 run_thesis_monitor.sh
+panic_state.json
+standing_orders.json
+personal_execution_history.json
