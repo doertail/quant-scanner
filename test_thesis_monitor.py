@@ -1,6 +1,14 @@
 import json
 
+import pytest
+
 import thesis_monitor as tm
+
+
+@pytest.fixture(autouse=True)
+def _crwd_thesis(monkeypatch):
+    # CRWD는 실보유에서 빠졌지만 ARR 비교 로직 검증용 픽스처로 계속 쓴다
+    monkeypatch.setitem(tm.THESES, "CRWD", "테스트용 논지")
 
 
 def filing(url="https://sec.gov/new"):
