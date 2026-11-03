@@ -120,8 +120,16 @@ def _vix_prev_close() -> float | None:
 
 
 def fmt(it: dict) -> str:
-    size = f"{it['qty']}주 @ ${it['limit']}" if "qty" in it else f"${it['usd']:,.2f}"
-    return f"{it['side']:4} {it['ticker']:5} {size}  ← {it['why']}"
+    size = f"{it['qty']}주 ${it['limit']:g} 지정가" if "qty" in it else f"${it['usd']:,.0f}어치"
+    return f"{it['ticker']} {size} {'매도' if it['side'] == 'SELL' else '매수'} — {it['why']}"
+
+
+def today_todo(today: date | None = None) -> list | None:
+    """오늘 드라이런 결과를 일일 리포트용 줄로. 오늘 실행 기록이 없으면 None."""
+    last = (_load(HISTORY, []) or [None])[-1]
+    if not last or not last["ts"].startswith((today or date.today()).isoformat()):
+        return None
+    return [fmt(i) for i in last["intents"]] + last["notes"]
 
 
 def main() -> int:
@@ -158,7 +166,7 @@ def main() -> int:
     now = datetime.today().strftime("%Y-%m-%d %H:%M")
     L = [f"🧪 **내 전략 자동매매 DRY-RUN** {now}  (주문 안 함)",
          f"VIX {vix if vix is None else round(vix, 1)} · 계좌 ${acct:,.0f} · 예수금 ${cash:,.0f} (적립 {runway:.0f}일분)",
-         "```", *(fmt(i) for i in intents or []), *([] if intents else ["오늘 할 주문 없음"]), "```", *notes]
+         *(f"• {fmt(i)}" for i in intents), *([] if intents else ["오늘 할 주문 없음"]), *notes]
     msg = "\n".join(L)
     print(msg)
 

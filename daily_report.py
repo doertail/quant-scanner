@@ -3,7 +3,7 @@ daily_report.py — 일일 기술적 요약 리포트 → 디스코드 (LLM 없�
 
 scanner_v4의 signals.json + portfolio.json(로컬)을 읽어
 한눈에 보는 요약을 디스코드로 보낸다. 펀더멘털·서술 없음 — 기술적 전략에 맞춘
-"레짐 + 보유신호 + 액션"만. 보유 손익은 토스 실시간가로 best-effort.
+"오늘 할 일 + VIX + 보유 손익"만, 폰에서 읽히게 코드블록 없이. 보유 손익은 토스 실시간가로 best-effort.
 
 보유·관심종목 뉴스는 news_brief.py가 붙인다(yfinance+네이버, 요약은 로컬 Ollama, 키 불필요).
 DISCORD_NEWS_WEBHOOK_URL이 있으면 뉴스는 #경제로 분리 발송된다.
@@ -24,7 +24,8 @@ from dotenv import load_dotenv
 
 import signals_io
 from config import A_MAX_SLOTS, B_MAX_SLOTS
-from personal_policy import DAILY_QQQM_USD, PANIC_REVIEW_VIX, PROTECTED_HOLDINGS, ROLES
+from personal_execution import LADDER, today_todo
+from personal_policy import DAILY_QQQM_USD, PANIC_REVIEW_VIX, PROTECTED_HOLDINGS
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -83,17 +84,26 @@ def slots_left(holdings: dict) -> dict:
             "B": max(0, B_MAX_SLOTS - used.count("B"))}
 
 
+WEEKDAY = "월화수목금토일"
+
+
 def build_report(signals: dict, holdings: dict,
                  prices: dict | None = None, megadip_lines: list | None = None,
-                 risk_line: str | None = None, sync_line: str | None = None,
-                 confirmed: set | None = None) -> str:
+                 sync_line: str | None = None, confirmed: set | None = None,
+                 todo: list | None = None) -> str:
+    """폰에서 읽히게: 맨 위 '오늘 할 일', 비어 있는 섹션은 아예 안 쓴다, 코드블록 없음
+    (한글·이모지 폭이 달라 정렬이 깨진다). todo = personal_execution 드라이런 결과(None=안 돌았음)."""
     prices = prices or {}
     confirmed = confirmed or set()
     r = signals.get("regime", {})
     date = signals.get("date", datetime.today().strftime("%Y-%m-%d"))
-    L = [f"📊 **일일 리포트 {date}**{stale_warning(date)}"]
+    try:
+        d = datetime.strptime(date, "%Y-%m-%d")
+        head = f"{d.month}/{d.day} ({WEEKDAY[d.weekday()]})"
+    except ValueError:
+        head = date
+    L = [f"📊 **{head}**{stale_warning(date)}"]
 
-    # 경고는 코드블록 **밖**에 굵게 — 안에 넣으면 회색 벽에 섞여 안 보인다.
     # 다운로드 실패로 유니버스가 쪼그라들어도 후보는 나온다. 낡음 경고와 같은 이유로 박는다.
     cov = signals.get("coverage_pct")
     if isinstance(cov, (int, float)) and cov < 90:
@@ -101,93 +111,61 @@ def build_report(signals: dict, holdings: dict,
     if sync_line:
         L.append(f"**{sync_line}**")
 
-    # 개인 투자 정책과 스캐너 신호는 판단 대상이 다르다.
+    # 1. 오늘 할 일 — 드라이런 의도 + 공포장 판단 + 보호 안 된 종목의 매도 신호 + 메가딥
+    do = list(todo or [])
+    if todo is None:
+        do.append("⚠️ 내 전략 드라이런 결과 없음 — personal_execution 로그 확인")
     vix = r.get("vix")
-    L += ["", "🧭 **내 투자 정책**",
-          f"QQQM: 토스 기존 ${DAILY_QQQM_USD:.0f}/거래일 적립 유지 (이 리포트가 주문하지 않음)"]
     if isinstance(vix, (int, float)) and vix > PANIC_REVIEW_VIX:
         if signals_io.is_stale(date):
-            L.append("과거 VIX 공포 신호: 새 스캔 전까지 추가 매수 판단 보류")
+            do.append("과거 VIX 공포 신호: 새 스캔 전까지 추가 매수 판단 보류")
         else:
             cash_for_review = signals.get("portfolio_cash")
             if isinstance(cash_for_review, (int, float)) and cash_for_review >= 0 and not sync_line:
-                L.append(f"공포장: USD 예수금 ${cash_for_review:,.0f} · "
-                         f"QQQM 기본 적립 약 {cash_for_review/DAILY_QQQM_USD:.0f}거래일분. "
-                         "추가 $100 매수마다 적립 여력 5거래일분 감소. "
-                         "추가 매수 여부와 금액은 실제 예수금 확인 후 직접 판단")
+                do.append(f"공포장: 추가 $100 매수마다 적립 여력 5거래일분 감소. "
+                          "추가 매수 여부와 금액은 실제 예수금 확인 후 직접 판단")
             else:
-                L.append("공포장: 추가 매수 여부와 금액을 실제 예수금 확인 후 직접 판단")
-    L.append("CRWD·TSLA: 회사 전망 검토 대상 · SPYM·TLT: 현재 보유, 자동 매도 대상 아님")
+                do.append("공포장: 추가 매수 여부와 금액을 실제 예수금 확인 후 직접 판단")
+    # 퀀트 매도 신호는 보호 보유(장기 핵심)에 안 쓴다 — 보호 종목은 아예 안 띄운다.
+    for e in signals.get("exits", []) or []:
+        if e.get("ticker") not in PROTECTED_HOLDINGS:
+            do.append(f"{e.get('ticker', '?')} 매도 신호 — {e.get('signal', '')}")
+    do += megadip_lines or []
+    L += ["", "✅ **오늘 할 일**", *(f"• {x}" for x in do)] if do else ["", "✅ 할 일 없음"]
 
-    # 기존 퀀트 전략의 신호. 개인 핵심 보유의 매도 신호로 읽지 않게 구분한다.
-    L += ["", "⚡ **기존 퀀트 전략 신호 (실주문 아님)**", "```"]
-    all_exits = signals.get("exits", []) or []
-    exits = [e for e in all_exits if e.get("ticker") not in PROTECTED_HOLDINGS]
-    ignored_exits = [e for e in all_exits if e.get("ticker") in PROTECTED_HOLDINGS]
-    for e in exits:
-        L.append(f"🔴 매도  {str(e.get('ticker','?')):<5}  {e.get('signal','')}")
-    if not exits:
-        L.append("매도 신호 없음")
-    for e in ignored_exits:
-        L.append(f"🔒 보호 보유 {str(e.get('ticker','?')):<5}  퀀트 매도 신호 무시")
+    # 2. 시장 — 내 전략에 쓰는 숫자는 VIX 하나
+    if isinstance(vix, (int, float)):
+        gap = LADDER[0] - vix
+        trig = f"공포 매수까지 +{gap:.0f}" if gap > 0 else "공포 매수 구간"
+        L += ["", f"📈 **시장** VIX {vix:.1f} · {trig}"]
+
+    # 3. 계좌 — 한 줄에 3종목씩
+    cash = signals.get("portfolio_cash")
+    cash_s = (f" · 현금 ${cash:,.0f} (적립 {cash / DAILY_QQQM_USD:.0f}일분)"
+              if isinstance(cash, (int, float)) else "")
+    L += ["", f"💼 **보유 {len(holdings)}종목**{cash_s}"]
+    cells = []
+    for t, p in holdings.items():
+        px, bp = prices.get(t), p.get("buy_price")
+        cells.append(f"{t} {(px - bp) / bp * 100:+.1f}%" if px and bp else t)
+    L += [" · ".join(cells[i:i + 3]) for i in range(0, len(cells), 3)]
+
+    # 4. 옛 퀀트 A/B 진입 후보 — forward 검증 실패한 전략이라 있을 때만 참고로 한 줄.
+    # 순위는 전략 **안에서만**(점수 스케일이 다름), 정원 넘는 순위는 ⛔ (BACKTESTS.md §10).
     ent = signals.get("entries", {}) or {}
-    # 순위는 전략 **안에서만** 매긴다. A는 RSI 역수, B는 6M 랭크 기반이라 점수 스케일이 달라
-    # 섞어서 줄 세우면 항상 B가 이긴다 — 신호가 아니라 공식 차이다.
     cands = [(c, f"{s}{i+1}") for s in ("A", "B", "C", "D")
              for i, c in enumerate((ent.get(s) or [])[:3])]
-    # 정원: A와 B는 점수로 경쟁시키지 않고 자리를 나눠 갖는다 (config 주석에 근거).
-    # 순위가 남은 자리보다 뒤면 점수가 아무리 높아도 오늘은 안 산다.
-    left = slots_left(holdings)
-    for c, rank in cands[:6]:
-        rsi = c.get("rsi")
-        rsi_s = f"RSI {rsi:.0f}" if isinstance(rsi, (int, float)) else ""
-        sc = c.get("score")
-        sc_s = f"{sc:.2f}" if isinstance(sc, (int, float)) else " -  "
-        mark = " ✅" if c.get("ticker") in confirmed else ""
-        cap = left.get(rank[0])
-        head = "⛔ 정원참" if cap is not None and int(rank[1:]) > cap else "🟢 매수 "
-        L.append(f"{head} {str(c.get('ticker','?')):<5}  {rank} {sc_s}  {rsi_s}{mark}")
-    if not cands:
-        L.append("진입 후보 없음")
-    L.append("```")
     if cands:
-        L.append(f"🎯 남은 정원 A {left['A']}/{A_MAX_SLOTS} · B {left['B']}/{B_MAX_SLOTS} — "
-                 "A·B는 서로 경쟁 안 시킨다(점수 공식이 다름)")
-    if confirmed and cands:
-        L.append("✅ = 아침 종가 스캔에도 있던 종목 (백테스트와 같은 기준) · A1 = 전략 내 1순위")
-
-    # 2. 보유 — 티커/손익 열 맞춰서 세로로 훑게
-    cash = signals.get("portfolio_cash")
-    cash_s = f" · 현금 ${cash:,.0f}" if cash is not None else ""
-    L += ["", f"💼 **보유 {len(holdings)}종목{cash_s}**", "```"]
-    for t, p in holdings.items():
-        strat = ROLES.get(t, p.get("strategy", "?"))
-        px = prices.get(t)
-        if px and p.get("buy_price"):
-            pnl = (px - p["buy_price"]) / p["buy_price"] * 100
-            emoji = "🟢" if pnl >= 0 else "🔴"
-            L.append(f"{emoji} {t:<5} {pnl:>+7.1f}%   {strat}")
-        else:
-            sh = p.get("shares")
-            sh_s = f"{sh:.2f}주" if isinstance(sh, (int, float)) else f"{sh}주"
-            L.append(f"⚪ {t:<5} {sh_s:>8}   {strat}")
-    L.append("```")
-
-    # 3. 메가캡 딥 (ABC와 별개, 한 메시지로 통합). [0]은 섹션 헤더 — 블록 밖으로 뺀다.
-    if megadip_lines:
-        L += ["", f"**{megadip_lines[0].strip()}**", "```"]
-        L += [x.strip() for x in megadip_lines[1:]]
-        L.append("```")
-
-    # 4. 맥락 — 매일 안 바뀌는 것들은 맨 아래 한 줄씩
-    L.append("")
-    hyg = "정상" if r.get("hyg_ok", True) else "⚠️악화"
-    vix = r.get("vix")
-    vix_s = f"{vix:.1f}" if isinstance(vix, (int, float)) else "?"
-    L.append(f"🌐 {r.get('market_regime','?')} · VIX {vix_s} {r.get('vix_zone','?')} · HYG {hyg} · "
-             f"진입 A{'✅' if r.get('allow_entry_a') else '❌'} B{'✅' if r.get('allow_entry_b') else '❌'}")
-    if risk_line:
-        L.append(risk_line.replace(" | ", " · "))
+        left = slots_left(holdings)
+        items = []
+        for c, rank in cands[:6]:
+            sc = c.get("score")
+            sc_s = f" {sc:.2f}" if isinstance(sc, (int, float)) else ""
+            cap = left.get(rank[0])
+            full = " ⛔" if cap is not None and int(rank[1:]) > cap else ""
+            mark = " ✅" if c.get("ticker") in confirmed else ""
+            items.append(f"{c.get('ticker', '?')} {rank}{sc_s}{full}{mark}")
+        L += ["", f"⚡ 퀀트 후보(참고): {' · '.join(items)}"]
     return "\n".join(L)
 
 
@@ -227,30 +205,20 @@ def main():
 
     prices = {} if args.no_prices else fetch_prices(list(holdings.keys()))
 
-    # 메가캡 딥 섹션 (한 메시지로 통합)
+    # 메가캡 딥 — 할 일(청산·진입 후보)만
     megadip_lines = None
     try:
         import megadip
         mpos = json.loads(megadip.POSITIONS.read_text(encoding="utf-8")) if megadip.POSITIONS.exists() else {}
-        megadip_lines = megadip.section_lines(mpos, megadip.fetch_rsi(megadip.MEGA), held=holdings)
+        megadip_lines = megadip.action_lines(mpos, megadip.fetch_rsi(megadip.MEGA), held=holdings)
     except Exception as e:
         print(f"(메가캡 섹션 생략: {e})", file=sys.stderr)
 
-    # 위험등급 한 줄 (risk_briefing 재사용, best-effort)
-    risk_line = None
-    try:
-        import risk_briefing as rb
-        grades, details = rb.build_dashboard(signals.get("regime", {}),
-                                             rb.fetch_trend(), rb.fetch_yield_spread())
-        risk_line = (f"🚦 위험 {rb.grade_overall(grades)} | 추세 {details['trend']} "
-                     f"| 폭 {details['breadth']} | {details['yield_curve']}")
-    except Exception as e:
-        print(f"(위험등급 생략: {e})", file=sys.stderr)
-
     report = build_report(signals, holdings, prices,
-                          megadip_lines=megadip_lines, risk_line=risk_line,
+                          megadip_lines=megadip_lines,
                           sync_line=sync_warning(_load(SYNC_STATE, {}).get("date")),
-                          confirmed=morning_tickers(signals.get("date")))
+                          confirmed=morning_tickers(signals.get("date")),
+                          todo=today_todo())
 
     # 뉴스: 전용 웹훅(#경제)이 있으면 그쪽으로 **따로** 보낸다.
     # 그래야 1900자를 리포트와 나눠 쓰지 않아서 요약까지 붙은 기사를 여러 건 실을 수 있다.

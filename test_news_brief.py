@@ -163,17 +163,18 @@ def _naver_resp(payload):
     return lambda *a, **k: R()
 
 
-def test_summary_is_rendered_on_its_own_line_and_truncated():
+def test_summary_replaces_title_as_link_text_and_is_truncated():
     it = dict(ITEMS[0], summary="가" * (nb.SUMMARY_MAX + 40))
-    body = "\n".join(nb.section_lines([it]))
-    assert "\n   ↳ " in body
-    assert "…" in body.split("↳ ")[1]
-    assert len(body.split("↳ ")[1]) <= nb.SUMMARY_MAX + 1
+    body = nb.section_lines([it])[1]
+    text = body.split("[", 1)[1].split("](")[0]
+    assert ITEMS[0]["title"][:20] not in body          # 영어 제목 + 번역 요약 두 줄 금지
+    assert text.endswith("…") and len(text) <= nb.SUMMARY_MAX
+    assert "\n" not in body
 
 
-def test_no_summary_means_no_extra_line():
-    body = "\n".join(nb.section_lines([dict(ITEMS[0], summary="")]))
-    assert "↳" not in body
+def test_no_summary_falls_back_to_title():
+    body = nb.section_lines([dict(ITEMS[0], summary="")])[1]
+    assert ITEMS[0]["title"][:20] in body
 
 
 def _lead_from(monkeypatch, body):
@@ -463,3 +464,9 @@ def test_holdings_include_korean_external_with_market_suffix(monkeypatch, tmp_pa
     monkeypatch.setattr(nb, "load_watchlist", lambda: {})
     assert nb.load_holdings() == ["GOOGL", "214450.KQ", "316140.KS"]
     assert nb.display_labels()["214450.KQ"] == "파마리서치"
+
+
+def test_same_ticker_second_article_does_not_repeat_tag():
+    a, b = dict(ITEMS[0], summary="첫 기사"), dict(ITEMS[0], summary="둘째 기사", url="https://x/2")
+    lines = nb.section_lines([a, b], changes={a["ticker"]: -4.27})
+    assert lines[1].startswith("• `") and lines[2].startswith("   └ [둘째 기사]")

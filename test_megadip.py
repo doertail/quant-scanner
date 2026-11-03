@@ -43,3 +43,11 @@ def test_held_tickers_are_not_entry_candidates():
     lines = m.section_lines({}, {"GOOGL": 21.0, "META": 25.0}, held={"GOOGL": {}})
     cand = lines[-1]
     assert "META" in cand and "GOOGL" not in cand
+
+
+def test_action_lines_only_when_something_to_do():
+    assert m.action_lines({}, {"GOOGL": 45.0}) == []
+    lines = m.action_lines({"MSFT": {"entry_date": "2026-01-02"}}, {"MSFT": 55.0, "META": 25.0, "GOOGL": 21.0},
+                           held={"GOOGL": {}})
+    assert lines[0].startswith("MSFT 메가딥 반등 완료")
+    assert lines[1] == "메가딥 진입 후보: META(RSI 25)"

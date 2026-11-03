@@ -96,6 +96,19 @@ def section_lines(positions: dict, rsi: dict, held=()) -> list:
     return L
 
 
+def action_lines(positions: dict, rsi: dict, held=()) -> list:
+    """할 일만 — 관리 포지션 청산 신호 + 진입 후보. 없으면 빈 목록 (일일 리포트 '오늘 할 일'용)."""
+    out = [f"{t} 메가딥 {classify(rsi.get(t), managed=True, days_held=_days_since(info.get('entry_date')))[1]}"
+           for t, info in (positions or {}).items()
+           if classify(rsi.get(t), managed=True, days_held=_days_since(info.get("entry_date")))[0] == "EXIT"]
+    cands = [f"{t}(RSI {rsi[t]:.0f})" for t in MEGA
+             if t not in (positions or {}) and t not in held
+             and classify(rsi.get(t), managed=False)[0] == "ENTRY"]
+    if cands:
+        out.append(f"메가딥 진입 후보: {', '.join(cands)}")
+    return out
+
+
 def build_report(positions: dict, rsi: dict) -> str:
     L = [f"🎯 **메가캡 딥 전략 {datetime.today().strftime('%Y-%m-%d')}**", "```"]
     L += section_lines(positions, rsi)[1:]   # 헤더 라인 중복 제거

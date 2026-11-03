@@ -668,21 +668,25 @@ def macro_lines(hours: int = DEFAULT_HOURS) -> list:
     lines = ["🌍 **시장** (내 종목 밖)"]
     if vix is not None:
         lines.append(vix_line(vix, ago))
-    for it in items:
-        title = it["title"]
-        if len(title) > TITLE_MAX:
-            title = title[:TITLE_MAX - 1].rstrip() + "…"
-        src = f" — {it['publisher']}" if it["publisher"] else ""
-        lines.append(f"• [{title}](<{it['url']}>){src}")
-        summary = (it.get("summary") or "").strip()
-        if WITH_SUMMARY and summary:
-            if len(summary) > SUMMARY_MAX:
-                summary = summary[:SUMMARY_MAX - 1].rstrip() + "…"
-            lines.append(f"   ↳ {summary}")
+    lines += [f"• {_headline(it)}" for it in items]
     return lines
 
 
 # ─── 렌더 ───────────────────────────────────────────────────────────────────
+
+def _headline(it: dict) -> str:
+    """기사 한 줄. 한국어 요약이 있으면 그게 링크 글자 — 영어 제목 + 그 번역 같은 요약을
+    두 줄로 쌓았더니 폰에서 제일 안 읽혔다. 요약이 없으면 원제목."""
+    text = (it.get("summary") or "").strip() if WITH_SUMMARY else ""
+    cap = SUMMARY_MAX if text else TITLE_MAX
+    text = text or it["title"]
+    if len(text) > cap:
+        text = text[:cap - 1].rstrip() + "…"
+    text = text.replace("[", "(").replace("]", ")")   # 링크 문법 깨짐 방지
+    src = f" — {it['publisher']}" if it["publisher"] else ""
+    # <> 로 임베드 억제 (헤드라인 여러 개면 프리뷰 카드가 채널을 잡아먹는다)
+    return f"[{text}](<{it['url']}>){src}"
+
 
 def section_lines(items: list, budget: int | None = None, labels: dict | None = None,
                   changes: dict | None = None, shown_out: set | None = None) -> list:
@@ -698,22 +702,15 @@ def section_lines(items: list, budget: int | None = None, labels: dict | None = 
 
     labels, changes = labels or {}, changes or {}
     rendered = []
+    prev = None
     for it in items:
-        title = it["title"]
-        if len(title) > TITLE_MAX:
-            title = title[:TITLE_MAX - 1].rstrip() + "…"
-        src = f" — {it['publisher']}" if it["publisher"] else ""
         name = labels.get(it["ticker"], it["ticker"])
         chg = changes.get(it["ticker"])
         tag = f"{name} {chg:+.1f}%" if chg is not None else name
-        # <> 로 임베드 억제 (헤드라인 여러 개면 프리뷰 카드가 채널을 잡아먹는다)
-        line = f"• `{tag}` [{title}](<{it['url']}>){src}"
-        summary = (it.get("summary") or "").strip()
-        if WITH_SUMMARY and summary:
-            if len(summary) > SUMMARY_MAX:
-                summary = summary[:SUMMARY_MAX - 1].rstrip() + "…"
-            line += f"\n   ↳ {summary}"
-        rendered.append((line, it["ticker"]))
+        # 같은 종목 두 번째 기사는 태그 반복 없이 들여쓰기 (등락순 정렬이라 붙어서 온다)
+        lead = "   └" if it["ticker"] == prev else f"• `{tag}`"
+        rendered.append((f"{lead} {_headline(it)}", it["ticker"]))
+        prev = it["ticker"]
 
     if budget is None:
         if shown_out is not None:

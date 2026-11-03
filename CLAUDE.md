@@ -39,11 +39,11 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `order_preflight.py` | 주문 직전 점검 CLI (DRY-RUN, 주문 없음) — `python order_preflight.py SYMBOL --side buy/sell --qty N`. 종목·호가·상하한가·유의사항·장운영·수수료·환율 + 매수가능금액/판매가능수량으로 GO/NO-GO 판정 |
 | `toss_sync.py` | 토스 실계좌 → `portfolio.json` 동기화 — `python toss_sync.py [--apply] [--discord]`. 기본 dry-run, `--apply` 시 `.bak` 백업 후 갱신. 스캐너 상태(strategy/trailing_stop/tp1) 보존하며 shares·평단만 교정, 신규=Core(재태깅 권장), cash=USD 예수금. 국내 등 외부 보유는 `external_holdings.json`(별도 파일 — 스캐너 save가 안 건드림)으로 분리 |
 | `toss_order.py` | **실주문 CLI (Phase 2, 실제 돈)** — `python toss_order.py SYMBOL BUY/SELL QTY [--type LIMIT --price P] [--yes]`. 기본 드라이 프리뷰, **`--yes`로만 실제 전송**, 킬스위치·장운영 가드레일. `TossClient.create_order`(POST /api/v1/orders) 사용. 미국주식은 미국장 개장 필요. 소수점은 `--amount`(orderAmount) 사용 |
-| `daily_report.py` | 일일 기술적 요약 → 디스코드 (**LLM·비용 0**, 로컬 파일 기반). signals/portfolio → 레짐+보유손익(토스 시세 best-effort)+액션. `[--no-send] [--no-prices]`. launchd(run_forward.sh)가 매일 자동 전송 |
+| `daily_report.py` | 일일 요약 → 디스코드 하루 1통 (**LLM·비용 0**). 폰 가독성 우선: 맨 위 **오늘 할 일**(personal_execution 드라이런 이력 + 보호 안 된 종목 매도신호 + 메가딥 `action_lines`) → VIX·공포 매수까지 거리 → 보유 손익 한 줄 3종목. 비어 있는 섹션은 안 쓰고 코드블록 없음. `[--no-send] [--no-prices]`. launchd(run_forward.sh)가 매일 자동 전송 |
 | `news_brief.py` | 보유·관심종목 뉴스 + **한국어 한 문장 요약** → 리포트 섹션 (키 불필요, 비용 0). 대상 = **실보유 자동**(`portfolio.json` 미국 + `external_holdings.json` 국내, 매일 아침 toss_sync가 갱신 — 국내는 토스 `get_stocks`의 market으로 `.KS`/`.KQ` 결정) + `watchlist.json`(보유 안 한 관심종목만). **중요도 = 당일 등락률 절대값**(많이 움직인 종목 먼저, 자리 부족하면 덜 움직인 것부터 잘림). 소스: 미국=Google News RSS / 한국=네이버 모바일 증권 API(회사명 없는 시황기사는 버림). 지수·채권 ETF는 대상 제외. 요약=**로컬 Ollama `config.NEWS_LLM_MODEL`(qwen3:14b)**(외부 전송 없음, 꺼져 있으면 원문 발췌로 폴백). 코드블록 **밖**에 붙여야 링크가 눌린다. `python news_brief.py [--hours N] [--no-llm]` |
 | `web_opportunity_alert.py` | 관심종목 밖 기술·보안·반도체·인프라 웹 뉴스(Google News RSS)에서 로컬 LLM이 조사 후보를 고르고, SEC 8-K·XBRL 재무·토스 가격·예수금을 붙여 `DISCORD_NEWS_WEBHOOK_URL`로 알림. 기본 미리보기, `--send`일 때만 전송·중복 상태 저장(`web_opportunity_state.json`). 독립 launchd `com.quantscanner.opportunity-alert`(`run_opportunity_alert.sh`)가 매일 09:00/15:00/21:00 KST 실행. 주문 없음. (옛 `opportunity_alert.py`는 Alpha Vantage 뉴스 유료화로 2026-11 삭제) |
 | `thesis_monitor.py` | CRWD·TSLA 신규 8-K/10-Q/10-K 공시와 EX-99.1 실적 발표문을 SEC에서 감시. CRWD ARR·신규 ARR를 직전 공식 기준선과 비교하고 재무 악화 단서·잠정 행동을 디스코드로 알림. 첫 실행은 기준선만 설정. 독립 launchd `com.quantscanner.thesis-monitor` 매일 21:10 KST. 자동 매도 주문은 하지 않음. |
-| `personal_execution.py` | **내 전략 자동매매 드라이런**(주문 없음, launchd 07:30 `run_forward.sh` 끝에서). 공포 사다리(VIX 30/35/40마다 공포 시작 시 TLT 평가액의 1/3씩 TLT→QQQM, VIX<20 종료·남은 몫 보관 — BACKTESTS §13) · ETF 아닌 종목 USD 계좌 10% 초과분 매도 · `standing_orders.json` 대기 지정가 재주문 · 예수금 적립 10일분 미만 경고. 상태 `panic_state.json`, 이력 `personal_execution_history.json`(모두 .gitignore) |
+| `personal_execution.py` | **내 전략 자동매매 드라이런**(주문 없음, launchd 07:30 `run_forward.sh`에서 `--no-send`로 돌고 결과는 daily_report '오늘 할 일'로 합쳐짐). 공포 사다리(VIX 30/35/40마다 공포 시작 시 TLT 평가액의 1/3씩 TLT→QQQM, VIX<20 종료·남은 몫 보관 — BACKTESTS §13) · ETF 아닌 종목 USD 계좌 10% 초과분 매도 · `standing_orders.json` 대기 지정가 재주문 · 예수금 적립 10일분 미만 경고. 상태 `panic_state.json`, 이력 `personal_execution_history.json`(모두 .gitignore) |
 | `personal_policy.py` | 개인 보유 역할·보호 목록(`PROTECTED_HOLDINGS` = 자동 매도 금지)·QQQM 적립액. **.gitignore**(공개 레포) — 새 클론은 `cp personal_policy.example.py personal_policy.py`. 투자 판단 기록 `docs/personal-investment-system.md` 등도 로컬 전용 |
 | `monitor_health.py` | 뉴스·보유 공시 예약 감시 실패 시 #경제 디스코드에 24시간당 한 번까지 상태 경고. |
 | ↳ 동반 이동 | 3종목 이상이 같은 방향 2.5%↑ → 개별 뉴스 대신 한 줄로 묶고 **코스피 대비** 표기(섹터만인지 시장 전체인지). 설명 기사는 버렸던 시황 기사에서 찾되 **Ollama가 '이 기사가 그 방향 움직임을 설명하나' 판정**해서 통과한 것만 붙인다. 못 찾으면 억지로 안 붙이고 '못 찾음'이라고 말한다 |
@@ -146,7 +146,7 @@ TOSS_CLIENT_SECRET=...
 ## launchd 설정 (선택)
 
 **등록됨**: `com.quantscanner.forward` (`~/Library/LaunchAgents/com.quantscanner.forward.plist`)
-— KST 화~토 07:30(미국장 마감 후) `run_forward.sh` 실행 → `toss_sync.py` → `scanner_v4.py` → `daily_report.py`(디스코드 일일 요약) → `personal_execution.py`(내 전략 드라이런).
+— KST 화~토 07:30(미국장 마감 후) `run_forward.sh` 실행 → `toss_sync.py` → `scanner_v4.py` → `personal_execution.py --no-send`(내 전략 드라이런 → 이력) → `daily_report.py`(디스코드 일일 요약 1통).
 로그: `forward_cron.log`. 맥이 깨어있을 때 실행(절전 중이면 깨어날 때 보충).
 
 ```bash

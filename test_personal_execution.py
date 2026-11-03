@@ -33,3 +33,14 @@ def test_standing_orders_expire_and_cap_to_held():
     assert pe.standing_intents(orders, held, date(2026, 11, 4))[0]["qty"] == 2
     assert pe.standing_intents(orders, held, date(2026, 11, 11)) == []
     assert pe.standing_intents(orders, {}, date(2026, 11, 4)) == []
+
+
+def test_today_todo_reads_only_todays_run(tmp_path, monkeypatch):
+    import json
+    f = tmp_path / "h.json"
+    f.write_text(json.dumps([{"ts": "2026-11-03 07:31", "notes": ["💸 입금 필요"],
+                              "intents": [{"side": "SELL", "ticker": "AAPL", "qty": 2, "limit": 200.0,
+                                           "why": "대기 지정가 (~2026-11-10)"}]}]))
+    monkeypatch.setattr(pe, "HISTORY", f)
+    assert pe.today_todo(date(2026, 11, 3)) == ["AAPL 2주 $200 지정가 매도 — 대기 지정가 (~2026-11-10)", "💸 입금 필요"]
+    assert pe.today_todo(date(2026, 11, 4)) is None

@@ -15,13 +15,22 @@ HOLD = {"QQQM": {"shares": 7.78, "buy_price": 274.32, "strategy": "Core"},
         "HSY": {"shares": 2.0, "buy_price": 197.42, "strategy": "A"}}
 
 
-def test_report_has_regime_and_holdings():
-    r = dr.build_report(SIG, HOLD, prices={"QQQM": 300.0, "HSY": 170.0})
-    assert "BULL" in r and "VIX 16.5" in r
-    assert "QQQM" in r and "HSY" in r
-    assert "DOW" in r            # 진입 후보
-    assert "내 투자 정책" in r and "기존 퀀트 전략 신호" in r
-    assert "장기 핵심 적립" in r
+def test_report_has_market_and_holdings():
+    r = dr.build_report(SIG, HOLD, prices={"QQQM": 300.0, "HSY": 170.0}, todo=[])
+    assert "VIX 16.5 · 공포 매수까지 +14" in r
+    assert "QQQM +9.4% · HSY -13.9%" in r     # 코드블록 없이 한 줄에
+    assert "적립 191일분" in r
+    assert "DOW" in r                           # 퀀트 후보는 있을 때만 참고 한 줄
+    assert "```" not in r                       # 폰에서 정렬이 깨진다
+    assert "✅ 할 일 없음" in r
+
+
+def test_todo_comes_first_and_missing_dry_run_is_flagged():
+    r = dr.build_report(SIG, HOLD, todo=["AAPL 2주 $200 지정가 매도 — 대기 지정가"],
+                        megadip_lines=["메가딥 진입 후보: META(RSI 25)"])
+    assert r.index("오늘 할 일") < r.index("시장") < r.index("보유")
+    assert "• AAPL 2주 $200 지정가 매도" in r and "• 메가딥 진입 후보" in r
+    assert "드라이런 결과 없음" in dr.build_report(SIG, HOLD)    # todo=None = 안 돌았다
 
 
 def test_panic_review_is_manual_and_requires_vix_over_30():
@@ -45,21 +54,9 @@ def test_protected_holding_exit_is_not_shown_as_sell_action():
         {"ticker": "TLT", "signal": "STOP"},
         {"ticker": "HSY", "signal": "STOP"},
     ]}
-    r = dr.build_report(sig, HOLD)
-    assert "🔒 보호 보유 TLT" in r
-    assert "🔴 매도  TLT" not in r
-    assert "🔴 매도  HSY" in r
-
-
-def test_report_pnl_emoji():
-    r = dr.build_report(SIG, HOLD, prices={"QQQM": 300.0, "HSY": 170.0})
-    assert "🟢" in r            # QQQM 평단 274 < 300 → 이익
-    assert "🔴" in r            # HSY 평단 197 > 170 → 손실
-
-
-def test_report_no_action_when_empty():
-    r = dr.build_report(SIG, HOLD)
-    assert "매도 신호 없음" in r
+    r = dr.build_report(sig, HOLD, todo=[])
+    assert "TLT 매도" not in r
+    assert "• HSY 매도 신호 — STOP" in r
 
 
 def test_coverage_warning():
@@ -92,9 +89,9 @@ def test_score_and_rank_shown():
 
 def test_morning_confirmation_mark():
     # 23:00 인트라데이 후보 중 아침 종가 스캔에도 있던 것에만 ✅ (백테스트와 같은 기준)
-    buys = [x for x in dr.build_report(SIG, HOLD, confirmed={"DOW"}).splitlines()
-            if x.startswith("🟢 매수")]
-    assert [x.endswith("✅") for x in buys] == [True, False, False]   # DOW만
+    r = dr.build_report(SIG, HOLD, confirmed={"DOW"})
+    assert "DOW A1 0.31 ✅" in r and "GD A2 0.20 ·" in r and "NBIS B1 0.69" in r
+    assert "NBIS B1 0.69 ✅" not in r
 
 
 def test_morning_tickers_ignores_other_day(tmp_path, monkeypatch):
@@ -119,9 +116,8 @@ def test_over_quota_candidates_marked():
     # 정원이 차면 점수가 아무리 높아도 안 산다 — A/B를 점수로 경쟁시키지 않기 위한 원칙.
     full = {f"X{i}": {"strategy": "A"} for i in range(dr.A_MAX_SLOTS)}
     r = dr.build_report(SIG, full)
-    assert "⛔ 정원참 DOW" in r and "⛔ 정원참 GD" in r    # A 자리 없음
-    assert "🟢 매수  NBIS" in r                           # B는 비어 있으니 산다
-    assert "남은 정원 A 0" in r
+    assert "DOW A1 0.31 ⛔" in r and "GD A2 0.20 ⛔" in r    # A 자리 없음
+    assert "NBIS B1 0.69 ⛔" not in r                      # B는 비어 있다
 
 
 def test_stale_warning():
