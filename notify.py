@@ -15,6 +15,26 @@ def strip_ansi(text: str) -> str:
     return re.sub(r'\033\[[0-9;]*m', '', text)
 
 
+def chunk_lines(text: str, limit: int = 1900) -> list:
+    """디스코드 2000자 제한용 분할. 줄 경계에서 자른다 — 글자 수로 자르면 링크가 반토막 난다."""
+    chunks, cur = [], ""
+    for line in text.split("\n"):
+        while len(line) > limit:                # 한 줄이 한도보다 길 때만 강제로 자른다
+            if cur:
+                chunks.append(cur)
+                cur = ""
+            chunks.append(line[:limit])
+            line = line[limit:]
+        if cur and len(cur) + 1 + len(line) > limit:
+            chunks.append(cur)
+            cur = line
+        else:
+            cur = f"{cur}\n{line}" if cur else line
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
 def send_discord(message: str, env_var: str = 'DISCORD_WEBHOOK_URL',
                  username: str = 'Scanner v4') -> bool:
     """웹훅으로 전송. 성공 여부를 돌려준다(호출부가 폴백을 고를 수 있게).
@@ -28,7 +48,7 @@ def send_discord(message: str, env_var: str = 'DISCORD_WEBHOOK_URL',
         return False
     try:
         clean  = strip_ansi(message)
-        chunks = [clean[i:i + 1900] for i in range(0, len(clean), 1900)]
+        chunks = chunk_lines(clean)
         for chunk in chunks:
             resp = requests.post(
                 url,

@@ -59,10 +59,3 @@ def test_paper_exits_are_separate_from_real_exits():
     assert [r['ticker'] for r in out] == ['AAPL', 'AMD']   # HOLD는 빠진다
     assert out[0]['shares'] == 3                            # 수량은 그 장부에서 온다
     assert sc.exit_rows(rows, {})[0]['shares'] == 0          # 다른 장부면 0 — 못 판다
-
-
-def test_forward_test_reads_paper_exits():
-    """회귀 방지: forward_test가 실계좌 exits로 되돌아가면 다시 영영 못 판다."""
-    src = open('forward_test.py', encoding='utf-8').read()
-    assert "signals.get('paper_exits'" in src
-    assert "signals.get('exits'" not in src

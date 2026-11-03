@@ -20,7 +20,6 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | 파일 | 역할 |
 |------|------|
 | `scanner_v4.py` | 메인 스캐너 — Phase1(유니버스 스캔) + Phase2(포트폴리오 모니터), Discord 웹훅 알림 |
-| `execution_layer.py` | Alpaca Paper API 주문 실행 — scanner_v4.py 실행 후 연속 실행, 킬스위치/일일손실한도/포지션캡 안전장치 포함 |
 | `bot.py` | Discord Trade Bot — `!buy`, `!sell`, `!port`, `!summary`, `!cash`, `!stop` 명령어로 수동 매매 기록 |
 | `risk_briefing.py` | 위험 등급 브리핑 — signals.json + 수익률곡선으로 6개 지표 대시보드 채점 후 Discord 발송 |
 
@@ -39,12 +38,10 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `prices.py` | 토스 현재가 조회 CLI — `python prices.py 005930 AAPL TSLA [--raw]` (계좌 불필요) |
 | `order_preflight.py` | 주문 직전 점검 CLI (DRY-RUN, 주문 없음) — `python order_preflight.py SYMBOL --side buy/sell --qty N`. 종목·호가·상하한가·유의사항·장운영·수수료·환율 + 매수가능금액/판매가능수량으로 GO/NO-GO 판정 |
 | `toss_sync.py` | 토스 실계좌 → `portfolio.json` 동기화 — `python toss_sync.py [--apply] [--discord]`. 기본 dry-run, `--apply` 시 `.bak` 백업 후 갱신. 스캐너 상태(strategy/trailing_stop/tp1) 보존하며 shares·평단만 교정, 신규=Core(재태깅 권장), cash=USD 예수금. 국내 등 외부 보유는 `external_holdings.json`(별도 파일 — 스캐너 save가 안 건드림)으로 분리 |
-| `toss_execution.py` | 토스 자동매매 실행기 (Phase 1 드라이런) — signals.json+실계좌 대조, 안전장치(킬스위치/포지션캡/가격sanity/장운영/Core매도금지) 후 의도 주문을 로그/디스코드. 실주문 미구현(--live 거부) |
-| `forward_test.py` | 페이퍼 forward 검증 — 토스 실시간 시세+스캐너 신호로 가상 포트폴리오 운용, 일별 평가액 + **QQQ 단순보유 벤치마크** 누적(`forward_equity.json`의 `qqq`/`edge_vs_qqq`). "전략 vs 시장" 비교 = 엣지 진짜 여부 판단. `python forward_test.py [--cash N]` |
 | `toss_order.py` | **실주문 CLI (Phase 2, 실제 돈)** — `python toss_order.py SYMBOL BUY/SELL QTY [--type LIMIT --price P] [--yes]`. 기본 드라이 프리뷰, **`--yes`로만 실제 전송**, 킬스위치·장운영 가드레일. `TossClient.create_order`(POST /api/v1/orders) 사용. 미국주식은 미국장 개장 필요. 소수점은 `--amount`(orderAmount) 사용 |
-| `daily_report.py` | 일일 기술적 요약 → 디스코드 (**LLM·비용 0**, 로컬 파일 기반). signals/portfolio/forward_equity → 레짐+보유손익(토스 시세 best-effort)+액션+forward vs QQQ. `[--no-send] [--no-prices]`. launchd(run_forward.sh)가 매일 자동 전송 |
+| `daily_report.py` | 일일 기술적 요약 → 디스코드 (**LLM·비용 0**, 로컬 파일 기반). signals/portfolio → 레짐+보유손익(토스 시세 best-effort)+액션. `[--no-send] [--no-prices]`. launchd(run_forward.sh)가 매일 자동 전송 |
 | `news_brief.py` | 보유·관심종목 뉴스 + **한국어 한 문장 요약** → 리포트 섹션 (키 불필요, 비용 0). 대상 = **실보유 자동**(`portfolio.json` 미국 + `external_holdings.json` 국내, 매일 아침 toss_sync가 갱신 — 국내는 토스 `get_stocks`의 market으로 `.KS`/`.KQ` 결정) + `watchlist.json`(보유 안 한 관심종목만). **중요도 = 당일 등락률 절대값**(많이 움직인 종목 먼저, 자리 부족하면 덜 움직인 것부터 잘림). 소스: 미국=Google News RSS / 한국=네이버 모바일 증권 API(회사명 없는 시황기사는 버림). 지수·채권 ETF는 대상 제외. 요약=**로컬 Ollama `config.NEWS_LLM_MODEL`(qwen3:14b)**(외부 전송 없음, 꺼져 있으면 원문 발췌로 폴백). 코드블록 **밖**에 붙여야 링크가 눌린다. `python news_brief.py [--hours N] [--no-llm]` |
-| `opportunity_alert.py` | 뉴스 후보와 최근 SEC 8-K 사건을 대조한 뒤 토스 가격·예수금·QQQM 적립 기간 및 SEC XBRL 직전 12개월 재무를 포함해 `DISCORD_NEWS_WEBHOOK_URL`로 선제 알림. 기본 미리보기, `--send`일 때만 전송·중복 상태 저장. 독립 launchd `com.quantscanner.opportunity-alert`이 매일 09:00/15:00/21:00 KST 실행. 자동 매수 승인·주문은 하지 않음. |
+| `web_opportunity_alert.py` | 관심종목 밖 기술·보안·반도체·인프라 웹 뉴스(Google News RSS)에서 로컬 LLM이 조사 후보를 고르고, SEC 8-K·XBRL 재무·토스 가격·예수금을 붙여 `DISCORD_NEWS_WEBHOOK_URL`로 알림. 기본 미리보기, `--send`일 때만 전송·중복 상태 저장(`web_opportunity_state.json`). 독립 launchd `com.quantscanner.opportunity-alert`(`run_opportunity_alert.sh`)가 매일 09:00/15:00/21:00 KST 실행. 주문 없음. (옛 `opportunity_alert.py`는 Alpha Vantage 뉴스 유료화로 2026-11 삭제) |
 | `thesis_monitor.py` | CRWD·TSLA 신규 8-K/10-Q/10-K 공시와 EX-99.1 실적 발표문을 SEC에서 감시. CRWD ARR·신규 ARR를 직전 공식 기준선과 비교하고 재무 악화 단서·잠정 행동을 디스코드로 알림. 첫 실행은 기준선만 설정. 독립 launchd `com.quantscanner.thesis-monitor` 매일 21:10 KST. 자동 매도 주문은 하지 않음. |
 | `personal_execution.py` | **내 전략 자동매매 드라이런**(주문 없음, launchd 07:30 `run_forward.sh` 끝에서). 공포 사다리(VIX 30/35/40마다 공포 시작 시 TLT 평가액의 1/3씩 TLT→QQQM, VIX<20 종료·남은 몫 보관 — BACKTESTS §13) · ETF 아닌 종목 USD 계좌 10% 초과분 매도 · `standing_orders.json` 대기 지정가 재주문 · 예수금 적립 10일분 미만 경고. 상태 `panic_state.json`, 이력 `personal_execution_history.json`(모두 .gitignore) |
 | `personal_policy.py` | 개인 보유 역할·보호 목록(`PROTECTED_HOLDINGS` = 자동 매도 금지)·QQQM 적립액. **.gitignore**(공개 레포) — 새 클론은 `cp personal_policy.example.py personal_policy.py`. 투자 판단 기록 `docs/personal-investment-system.md` 등도 로컬 전용 |
@@ -61,9 +58,6 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `external_holdings.json` | 국내 등 외부 보유 (toss_sync가 분리 관리, .gitignore). ⚠️ 토스 응답에 국내분이 0건이면 toss_sync가 **덮어쓰지 않는다** — 전량매도로 비우려면 직접 편집 |
 | `watchlist.json` | **보유하지 않은** 관심종목 `{"티커": "표시이름"}`(보유는 자동 포함, .gitignore — 예시 `watchlist.example.json`). 뉴스 대상 = 보유 + 이 목록. 토스 API에 관심종목이 없어 수동 관리. **한국 종목은 `.KS` 접미사 필수**(`105560.KS`=KB금융) — yfinance 규칙. 티커만 있는 배열도 받음 |
 | `signals.json` | 최근 스캔 결과 (.gitignore) |
-| `forward_equity.json` | forward 페이퍼 일별 성과 + QQQ 벤치마크 (.gitignore) |
-| `forward_paper.json` | forward 페이퍼 포트폴리오 상태 (.gitignore) |
-| `toss_execution_history.json` | toss_execution 드라이런 의도 이력 (.gitignore) |
 | `trades.json` | 봇 매매 기록 (.gitignore) |
 | `backtest/` | 백테스트 스크립트. 풀시스템 `backtest_v4.py` + 검증 스위트(robustness/validation/improve/walkforward/per_strategy/voltarget/regime_routing/dca_vs_dip/pead) — 결과·해석은 **`BACKTESTS.md`**. `archive/`는 dead code |
 
@@ -75,9 +69,6 @@ pip install -r requirements.txt
 
 # Phase 1+2 스캔 (수동)
 python scanner_v4.py
-
-# Alpaca 주문 실행 (스캔 직후)
-python execution_layer.py
 
 # 위험 브리핑 (스캔 직후, signals.json 평가)
 python risk_briefing.py            # Discord 발송
@@ -96,7 +87,7 @@ python bot.py
 ```bash
 python account_status.py                       # 계좌 현황 (잔고/보유/예수금)
 python toss_sync.py --apply                    # 실계좌 → portfolio.json 동기화
-python forward_test.py                         # forward 페이퍼 검증 1일치 (launchd 자동)
+python personal_execution.py --no-send         # 내 전략 드라이런 (launchd 자동)
 python daily_report.py                         # 일일 요약 디스코드 전송 (launchd 자동)
 python order_preflight.py TSLA --side sell --qty 1   # 주문 직전 점검 (DRY)
 python toss_order.py PPL SELL 12               # 실주문 드라이 프리뷰
@@ -113,9 +104,6 @@ DISCORD_NEWS_WEBHOOK_URL=...  # 관심 뉴스 전용(#경제). 있으면 뉴스�
                               # 등록은 `zsh add_news_webhook.sh` (클립보드에서 읽음)
 DISCORD_TOKEN=...         # bot.py — Discord 봇 토큰
 GEMINI_API_KEY=...        # 뉴스 감성 필터 (gemini-2.5-flash)
-APCA_API_KEY_ID=...       # execution_layer.py — Alpaca Paper API
-APCA_API_SECRET_KEY=...
-APCA_API_BASE_URL=https://paper-api.alpaca.markets
 TOSS_CLIENT_ID=...        # toss_client.py — 토스증권 Open API (계좌 조회)
 TOSS_CLIENT_SECRET=...
 ```
@@ -136,8 +124,9 @@ TOSS_CLIENT_SECRET=...
 
 **진행 상태**:
 - ✅ 1) 계좌·예수금·시세 조회  ✅ 2) 전체 조회 API + 주문 직전 점검(`order_preflight`)  ✅ 3) **주문 실행**(`create_order`/`toss_order.py`) — **첫 실거래 완료** (PPL 매도, QQQM 매수)
-- 🔶 **현재 단계: forward 페이퍼 검증 중** (`forward_test.py`, launchd 자동). 8주 후 `edge_vs_qqq`로 레버리지/실거래 확대 판단 — 기준은 `docs/toss-auto-trading-golive.md`
-- ⬜ 미구현: `/orders/{id}/cancel`·`/modify`, `GET /orders`(목록) — 필요 시 추가. `toss_execution.py`(드라이런 자동매매)의 `--live`도 아직 비활성
+- ❌ 퀀트 A/B forward 페이퍼 검증: 2026-09-08~11-03 8주 −7.1% vs QQQ −5.0% → Go-Live 기준(≥−5%) 미달, **중단·코드 삭제**(forward_test/execution_layer/toss_execution)
+- 🔶 **현재 단계: 내 전략 드라이런** (`personal_execution.py`, launchd 자동) 2~4주 확인 후 실주문 전환 검토
+- ⬜ 미구현: `/orders/{id}/cancel`·`/modify`, `GET /orders`(목록) — 필요 시 추가
 
 ## 주요 CONFIG (`config.py`)
 
@@ -157,7 +146,7 @@ TOSS_CLIENT_SECRET=...
 ## launchd 설정 (선택)
 
 **등록됨**: `com.quantscanner.forward` (`~/Library/LaunchAgents/com.quantscanner.forward.plist`)
-— KST 화~토 07:30(미국장 마감 후) `run_forward.sh` 실행 → `scanner_v4.py` → `forward_test.py` → `daily_report.py`(디스코드 일일 요약).
+— KST 화~토 07:30(미국장 마감 후) `run_forward.sh` 실행 → `toss_sync.py` → `scanner_v4.py` → `daily_report.py`(디스코드 일일 요약) → `personal_execution.py`(내 전략 드라이런).
 로그: `forward_cron.log`. 맥이 깨어있을 때 실행(절전 중이면 깨어날 때 보충).
 
 ```bash

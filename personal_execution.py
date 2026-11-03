@@ -86,6 +86,24 @@ def standing_intents(orders: list, held: dict, today: date) -> list:
     return out
 
 
+def _f(x, d=0.0):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return d
+
+
+def fetch_snapshot(client) -> dict:
+    """토스 실계좌 → {usd_cash, account_value_usd, held{ticker:{shares,last}}} (미국 종목만)."""
+    seq = client.get_accounts()["result"][0]["accountSeq"]
+    r = client.get_holdings(seq).get("result", {}) or {}
+    usd_cash = _f((client.get_buying_power(seq, "USD").get("result") or {}).get("cashBuyingPower"))
+    mkt_usd = _f((((r.get("marketValue") or {}).get("amount")) or {}).get("usd"))
+    held = {it["symbol"]: {"shares": _f(it.get("quantity")), "last": _f(it.get("lastPrice"))}
+            for it in r.get("items", []) or [] if it.get("marketCountry") == "US"}
+    return {"usd_cash": usd_cash, "account_value_usd": round(mkt_usd + usd_cash, 2), "held": held}
+
+
 def _load(path: Path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -114,7 +132,6 @@ def main() -> int:
         print("🛑 킬스위치 활성 — 중단"); return 0
 
     from toss_client import TossClient, TossAPIError
-    from toss_execution import fetch_snapshot
     try:
         snap = fetch_snapshot(TossClient())
     except (TossAPIError, KeyError, IndexError) as e:

@@ -37,3 +37,9 @@ def test_days_held_counts_trading_days():
     import numpy as np
     assert int(np.busday_count(date(2026, 10, 30), date(2026, 11, 2))) == 1
     assert m._days_since(date.today().isoformat()) == 0
+
+
+def test_held_tickers_are_not_entry_candidates():
+    lines = m.section_lines({}, {"GOOGL": 21.0, "META": 25.0}, held={"GOOGL": {}})
+    cand = lines[-1]
+    assert "META" in cand and "GOOGL" not in cand

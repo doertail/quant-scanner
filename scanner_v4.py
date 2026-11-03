@@ -103,7 +103,6 @@ def _run_risk_briefing() -> None:
         log.warning(f"위험 브리핑 실패(스캔은 정상 완료): {e}")
 
 
-PAPER_FILE = BASE_DIR / 'forward_paper.json'
 EXIT_SIGNALS = {'STOP', 'TP1', 'TP2', 'MA_CROSS', 'C_EXIT'}
 
 
@@ -121,31 +120,8 @@ def exit_rows(rows: list, book: dict) -> list:
     ]
 
 
-def load_paper_book() -> dict:
-    """forward_test.py의 페이퍼 북 보유분. 없으면 빈 dict."""
-    try:
-        return json.loads(PAPER_FILE.read_text(encoding='utf-8')).get('holdings', {})
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-def save_paper_book(holdings: dict) -> None:
-    """evaluate_holdings가 갱신한 trailing_stop/tp1_hit를 페이퍼 북에 되돌려 쓴다."""
-    try:
-        book = json.loads(PAPER_FILE.read_text(encoding='utf-8'))
-    except (FileNotFoundError, ValueError):
-        return
-    book['holdings'] = holdings
-    PAPER_FILE.write_text(json.dumps(book, ensure_ascii=False, indent=2), encoding='utf-8')
-
-
 def evaluate_holdings(holdings: dict, get_df, core_assets: set, vix_price) -> tuple[list, list]:
-    """보유 종목의 청산 신호를 판정한다. pos를 제자리 변경(trailing_stop, tp1_hit).
-
-    실계좌(portfolio.json)와 페이퍼 북(forward_paper.json)에 같은 규칙을 쓰려고 분리했다.
-    예전엔 실계좌만 돌아서 페이퍼 북 종목엔 청산 신호가 영영 안 생겼고, forward_test가
-    54일 동안 한 번도 못 파는 buy&hold가 돼 있었다.
-    """
+    """보유 종목의 청산 신호를 판정한다. pos를 제자리 변경(trailing_stop, tp1_hit)."""
     port_rows:    list[dict] = []
     stop_updates: list[str] = []
 
@@ -246,13 +222,11 @@ def main() -> None:
 
     holdings, portfolio_cash = load_portfolio()
     core_assets  = {t for t, pos in holdings.items() if pos.get('strategy') == 'Core'}
-    # 페이퍼 북은 실계좌와 종목이 겹치지 않는다. 시세를 같이 받아야 청산 판정이 된다.
-    paper_book   = load_paper_book()
-    port_tickers = sorted(set(holdings) | set(paper_book))
+    port_tickers = sorted(holdings)
     all_tickers  = list(set(sp500 + ndx100 + port_tickers + D_TICKERS + ['QQQ', 'HYG']))
     log.info(
         f"S&P500 {len(sp500)}  NDX100 {len(ndx100)}  "
-        f"포트폴리오 {len(holdings)}  페이퍼 {len(paper_book)}  합계(중복제거) {len(all_tickers)}"
+        f"포트폴리오 {len(holdings)}  합계(중복제거) {len(all_tickers)}"
     )
 
     # ── 2. 데이터 다운로드 (단일 배치) ──────────────────────────────────────
@@ -506,9 +480,6 @@ def main() -> None:
 
     # ── 5. Phase 2: 포트폴리오 모니터 (전략별 로직 분리) ───────────────────
     port_rows, stop_updates = evaluate_holdings(holdings, get_df, core_assets, vix_price)
-    # 페이퍼 북은 같은 규칙, 다른 장부. Core 예외 없음 — 순수 전략만 굴린다.
-    paper_rows, _ = evaluate_holdings(paper_book, get_df, set(), vix_price)
-    save_paper_book(paper_book)
 
     save_portfolio(holdings, portfolio_cash)
     if stop_updates:
@@ -891,8 +862,6 @@ def main() -> None:
         'portfolio_cash': portfolio_cash,
         'coverage_pct': coverage_pct,
         'exits':       exit_rows(port_rows, holdings),
-        # 페이퍼 북 전용 청산. forward_test는 이걸 본다 — 실계좌 exits와 종목이 다르다.
-        'paper_exits': exit_rows(paper_rows, paper_book),
         'entries': {
             'A': entry_a[:3],
             'B': entry_b[:3],
@@ -910,7 +879,6 @@ def main() -> None:
             json.dump(signals_data, f, indent=2, ensure_ascii=False, default=str)
         log.info(
             f"signals.json 저장: 청산 {len(signals_data['exits'])}건 "
-            f"(페이퍼 {len(signals_data['paper_exits'])}건) "
             f"| 진입 A {len(entry_a)}건 B {len(entry_b)}건 D {len(entry_d)}건"
         )
     except Exception as e:

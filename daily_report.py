@@ -1,9 +1,9 @@
 """
 daily_report.py — 일일 기술적 요약 리포트 → 디스코드 (LLM 없음, 비용 0)
 
-scanner_v4의 signals.json + portfolio.json + forward_equity.json(로컬)을 읽어
+scanner_v4의 signals.json + portfolio.json(로컬)을 읽어
 한눈에 보는 요약을 디스코드로 보낸다. 펀더멘털·서술 없음 — 기술적 전략에 맞춘
-"레짐 + 보유신호 + 액션 + forward vs QQQ"만. 보유 손익은 토스 실시간가로 best-effort.
+"레짐 + 보유신호 + 액션"만. 보유 손익은 토스 실시간가로 best-effort.
 
 보유·관심종목 뉴스는 news_brief.py가 붙인다(yfinance+네이버, 요약은 로컬 Ollama, 키 불필요).
 DISCORD_NEWS_WEBHOOK_URL이 있으면 뉴스는 #경제로 분리 발송된다.
@@ -32,9 +32,10 @@ load_dotenv(BASE_DIR / ".env")
 SIGNALS = BASE_DIR / "signals.json"
 MORNING = BASE_DIR / "signals_morning.json"  # 23:00 스캔 직전 run_scanner.sh가 뜬 07:30치
 PORTFOLIO = BASE_DIR / "portfolio.json"
-FORWARD = BASE_DIR / "forward_equity.json"
 SYNC_STATE = BASE_DIR / "toss_sync_state.json"  # toss_sync.py --apply 마지막 성공 날짜
 DISCORD_SAFE_LEN = 1900  # notify.send_discord의 청크 크기 — 넘으면 2통으로 쪼개진다
+# 뉴스 채널은 따로라 여러 통이어도 된다 (notify가 줄 경계로 나눈다). Google News 링크 한 줄이 ~300자
+NEWS_CHANNEL_LEN = DISCORD_SAFE_LEN * 3
 NEWS_WEBHOOK_ENV = "DISCORD_NEWS_WEBHOOK_URL"  # 설정되면 뉴스를 #경제로 분리 발송
 
 
@@ -82,7 +83,7 @@ def slots_left(holdings: dict) -> dict:
             "B": max(0, B_MAX_SLOTS - used.count("B"))}
 
 
-def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
+def build_report(signals: dict, holdings: dict,
                  prices: dict | None = None, megadip_lines: list | None = None,
                  risk_line: str | None = None, sync_line: str | None = None,
                  confirmed: set | None = None) -> str:
@@ -180,12 +181,6 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
 
     # 4. 맥락 — 매일 안 바뀌는 것들은 맨 아래 한 줄씩
     L.append("")
-    if fwd_last:
-        v, q = fwd_last.get("value"), fwd_last.get("qqq")
-        if v is not None and q:
-            pct = (v - q) / q * 100
-            L.append(f"📈 퀀트 페이퍼 forward ${v:,.0f} vs QQQ ${q:,.0f} · "
-                     f"**{pct:+.1f}%** {'✅앞섬' if pct >= 0 else '🔻뒤짐'}")
     hyg = "정상" if r.get("hyg_ok", True) else "⚠️악화"
     vix = r.get("vix")
     vix_s = f"{vix:.1f}" if isinstance(vix, (int, float)) else "?"
@@ -229,8 +224,6 @@ def main():
     holdings = pf.get("holdings", {})
     if pf.get("cash") is not None:          # portfolio.json 현금이 더 최신 (toss_sync 갱신)
         signals = {**signals, "portfolio_cash": pf["cash"]}
-    fwd = _load(FORWARD, [])
-    fwd_last = fwd[-1] if fwd else None
 
     prices = {} if args.no_prices else fetch_prices(list(holdings.keys()))
 
@@ -239,7 +232,7 @@ def main():
     try:
         import megadip
         mpos = json.loads(megadip.POSITIONS.read_text(encoding="utf-8")) if megadip.POSITIONS.exists() else {}
-        megadip_lines = megadip.section_lines(mpos, megadip.fetch_rsi(megadip.MEGA))
+        megadip_lines = megadip.section_lines(mpos, megadip.fetch_rsi(megadip.MEGA), held=holdings)
     except Exception as e:
         print(f"(메가캡 섹션 생략: {e})", file=sys.stderr)
 
@@ -254,7 +247,7 @@ def main():
     except Exception as e:
         print(f"(위험등급 생략: {e})", file=sys.stderr)
 
-    report = build_report(signals, holdings, fwd_last, prices,
+    report = build_report(signals, holdings, prices,
                           megadip_lines=megadip_lines, risk_line=risk_line,
                           sync_line=sync_warning(_load(SYNC_STATE, {}).get("date")),
                           confirmed=morning_tickers(signals.get("date")))
@@ -269,7 +262,7 @@ def main():
         try:
             import news_brief
             news_lines = news_brief.build_section(
-                budget=DISCORD_SAFE_LEN - (0 if separate else len(report) + 2))
+                budget=NEWS_CHANNEL_LEN if separate else DISCORD_SAFE_LEN - len(report) - 2)
             if news_lines and not separate:
                 report += "\n\n" + "\n".join(news_lines)
                 news_lines = None          # 본문에 이미 들어감

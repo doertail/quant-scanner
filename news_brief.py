@@ -40,7 +40,7 @@ from dotenv import load_dotenv
 from config import NEWS_LLM_MODEL
 
 BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")   # ALPHAVANTAGE_API_KEY — 단독 실행에도 필요
+load_dotenv(BASE_DIR / ".env")
 WATCHLIST_FILE = BASE_DIR / "watchlist.json"
 PORTFOLIO_FILE = BASE_DIR / "portfolio.json"
 EXTERNAL_FILE = BASE_DIR / "external_holdings.json"
@@ -199,8 +199,8 @@ def _parse_dt(s):
         return None
 
 
-def fetch_us_news(ticker: str, cutoff: datetime, limit: int) -> list:
-    """미국 종목 — Google News RSS. (yfinance .news는 2026-10부터 'YAHOO DOWN' 예외만 낸다)"""
+def _google_news(query: str, cutoff: datetime, limit: int) -> list:
+    """Google News RSS 검색 → [{title, publisher, url, dt}]. 실패하면 빈 리스트."""
     import xml.etree.ElementTree as ET
     from email.utils import parsedate_to_datetime
     from urllib.parse import urlencode
@@ -208,7 +208,7 @@ def fetch_us_news(ticker: str, cutoff: datetime, limit: int) -> list:
     import requests
 
     url = "https://news.google.com/rss/search?" + urlencode(
-        {"q": f"{ticker} stock when:2d", "hl": "en-US", "gl": "US", "ceid": "US:en"})
+        {"q": f"{query} when:2d", "hl": "en-US", "gl": "US", "ceid": "US:en"})
     try:
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         r.raise_for_status()
@@ -216,7 +216,7 @@ def fetch_us_news(ticker: str, cutoff: datetime, limit: int) -> list:
     except Exception:
         return []
 
-    out = []
+    out, heads = [], set()
     for it in root.findall("./channel/item"):
         if len(out) >= limit:
             break
@@ -229,13 +229,20 @@ def fetch_us_news(ticker: str, cutoff: datetime, limit: int) -> list:
         except (TypeError, ValueError):
             continue
         link = (it.findtext("link") or "").strip()
-        if (not (title and link) or dt < cutoff or "_" in title.split()[0]
+        if (not (title and link) or dt < cutoff or title[:40] in heads
+                or "_" in title.split()[0]
                 or re.search(r"Stock (Price|Quotes?)\b.*(News|Quote|Chart)", title)):
-            continue                                # 깨진 제목("META_TITLE_QUOTE")·시세 페이지
-        # RSS에는 본문이 없다 — 제목이 곧 요약 입력
-        out.append({"ticker": ticker, "title": title, "publisher": publisher, "url": link,
-                    "dt": dt, "summary": "", "raw": title})
+            continue                                # 깨진 제목("META_TITLE_QUOTE")·시세 페이지·중복
+        heads.add(title[:40])
+        out.append({"title": title, "publisher": publisher, "url": link, "dt": dt})
     return out
+
+
+def fetch_us_news(ticker: str, cutoff: datetime, limit: int) -> list:
+    """미국 종목 — Google News RSS. (yfinance .news는 2026-10부터 'YAHOO DOWN' 예외만 낸다)
+    RSS에는 본문이 없다 — 제목이 곧 요약 입력."""
+    return [{**it, "ticker": ticker, "summary": "", "raw": it["title"]}
+            for it in _google_news(f"{ticker} stock", cutoff, limit)]
 
 
 _NAVER_IDS = re.compile(r"article_id=(\d+).*?office_id=(\d+)")
@@ -606,77 +613,61 @@ def coverage_line(tickers, coverage: dict, shown: set, covered: set,
     return f"📋 {' | '.join(parts)}" if parts else ""
 
 
-# ─── 시장 큰 사건 (내 종목 밖) ──────────────────────────────────────────────
-# 보유·관심 10종목만 보면 연준·금리·관세처럼 "남들 다 아는데 나만 모르는 것"을 영영 못 본다.
-# Alpha Vantage NEWS_SENTIMENT는 기사마다 토픽 관련도를 숫자로 준다 — 단어 리스트를 손으로
-# 늘리는 대신 점수 합으로 정렬한다.
+# ─── 시장 (내 종목 밖) ──────────────────────────────────────────────────────
+# 보유 종목만 보면 연준·금리·관세처럼 "남들 다 아는데 나만 모르는 것"을 못 본다.
+# 내 전략에서 시장 전체로 행동이 바뀌는 건 공포 매수(VIX 30/35/40)뿐이라 VIX를 맨 앞에 둔다.
+# (Alpha Vantage NEWS_SENTIMENT가 2026-10 유료 전용이 되어 Google News로 바꿨다)
 
-AV_URL = "https://www.alphavantage.co/query"
-# ⚠️ `topics=a,b`는 OR가 아니라 AND다 (실측 2026-09-07: 4개 동시 요청 → items 0).
-# 토픽당 따로 부르고 여기서 합친다. 하루 3콜, 무료 한도 25콜.
-AV_TOPICS = ("economy_monetary", "economy_fiscal", "financial_markets")
 MACRO_ITEMS = 3
-# 13F 지분공시 자동생성 기사 도배 — 95건 중 25건이 이 소스였다(2026-09-07).
-# 정규식이 아니라 소스 한 줄이라 사고마다 늘어나지 않는다.
-AV_SKIP_SOURCES = {"MarketBeat"}
+MACRO_QUERY = "stock market Fed"
+FEAR_QUERY = "stock market selloff VIX"
+VIX_WATCH = 25.0          # 이 위거나 5일 +20%면 "왜 무서워졌나" 기사를 먼저 찾는다
 
 
-def _av_score(article: dict) -> float:
-    """우리가 요청한 토픽들의 관련도 합. 여러 토픽에 걸친 기사가 위로 온다."""
-    return sum(float(t.get("relevance_score") or 0)
-               for t in (article.get("topics") or []) if t.get("topic") in AV_TOPICS)
+def vix_line(vix: float, vix_5d_ago: float | None) -> str:
+    """VIX 한 줄 (순수). 공포 매수 사다리 기준 다음 단계까지 거리를 같이 보여준다."""
+    from personal_execution import LADDER, REARM_BELOW
+
+    chg = f" (5일 전 {vix_5d_ago:.1f}, {vix / vix_5d_ago - 1:+.0%})" if vix_5d_ago else ""
+    passed = [l for l in LADDER if vix > l]
+    if passed:
+        nxt = next((l for l in LADDER if vix <= l), None)
+        more = f" · 다음 {nxt:.0f}까지 +{nxt - vix:.1f}" if nxt else " · 마지막 단계"
+        return f"🚨 VIX {vix:.1f}{chg} — 공포 매수 {len(passed)}차 구간{more}"
+    calm = " · 평온" if vix < REARM_BELOW else ""
+    return f"VIX {vix:.1f}{chg} — 공포 매수 1차({LADDER[0]:.0f})까지 +{LADDER[0] - vix:.1f}{calm}"
 
 
-def fetch_macro(hours: int = DEFAULT_HOURS, limit: int = MACRO_ITEMS) -> list:
-    """시장 전체 뉴스 상위 N건. 키가 없거나 실패하면 빈 리스트 — 리포트를 막지 않는다.
+def fetch_vix() -> tuple:
+    """(최근 종가, 5거래일 전 종가). 실패하면 (None, None)."""
+    import yfinance as yf
 
-    `sort=RELEVANCE`는 쓰지 않는다. 질의 관련도순이라 열흘 전 기사가 1순위로 올라온다
-    (실측 2026-09-07). 최신 창은 time_from으로 자르고 순위는 토픽 점수로 매긴다.
-    """
-    import os
+    try:
+        c = yf.Ticker("^VIX").history(period="1mo")["Close"].dropna()
+        return float(c.iloc[-1]), (float(c.iloc[-6]) if len(c) >= 6 else None)
+    except Exception:
+        return None, None
 
-    import requests
 
-    key = os.getenv("ALPHAVANTAGE_API_KEY", "")
-    if not key:
-        return []
-    t_from = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y%m%dT%H%M")
-
-    feed = {}
-    for topic in AV_TOPICS:
-        try:
-            r = requests.get(AV_URL, timeout=15, params={
-                "function": "NEWS_SENTIMENT", "topics": topic, "sort": "LATEST",
-                "time_from": t_from, "limit": 50, "apikey": key,
-            })
-            r.raise_for_status()
-            got = r.json().get("feed") or []      # 한도 초과 시 {"Information": ...} → 빈 리스트
-        except Exception:
-            continue                              # 한 토픽이 죽어도 나머지는 쓴다
-        for a in got:
-            feed.setdefault(a.get("url"), a)
-
-    out, seen_heads = [], set()
-    for a in sorted(feed.values(), key=_av_score, reverse=True):
-        title = (a.get("title") or "").strip()
-        head = title[:40]
-        if not (title and a.get("url")) or a.get("source") in AV_SKIP_SOURCES or head in seen_heads:
-            continue                              # 같은 기사가 제목만 바뀌어 여러 건 온다
-        seen_heads.add(head)
-        body = (a.get("summary") or "").strip()
-        out.append({"title": title, "url": a["url"], "publisher": a.get("source") or "",
-                    "summary": body, "raw": body})
-        if len(out) >= limit:
-            break
-    return out
+def fetch_macro(hours: int = DEFAULT_HOURS, limit: int = MACRO_ITEMS, scared: bool = False) -> list:
+    """시장 헤드라인. VIX가 튀었으면 급락 설명 기사를 먼저 채운다."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    items = _google_news(FEAR_QUERY, cutoff, limit) if scared else []
+    seen = {it["title"][:40] for it in items}
+    items += [it for it in _google_news(MACRO_QUERY, cutoff, limit) if it["title"][:40] not in seen]
+    return [{**it, "summary": "", "raw": it["title"]} for it in items[:limit]]
 
 
 def macro_lines(hours: int = DEFAULT_HOURS) -> list:
-    """시장 섹션 줄들. 기사가 없으면 빈 리스트(헤더도 안 붙인다)."""
-    items = summarize_items(fetch_macro(hours))
-    if not items:
+    """시장 섹션 줄들. VIX도 기사도 없으면 빈 리스트(헤더도 안 붙인다)."""
+    vix, ago = fetch_vix()
+    scared = vix is not None and (vix >= VIX_WATCH or (ago and vix / ago - 1 >= 0.20))
+    items = summarize_items(fetch_macro(hours, scared=bool(scared)))
+    if vix is None and not items:
         return []
     lines = ["🌍 **시장** (내 종목 밖)"]
+    if vix is not None:
+        lines.append(vix_line(vix, ago))
     for it in items:
         title = it["title"]
         if len(title) > TITLE_MAX:

@@ -20,13 +20,24 @@ from company_fundamentals import display_fundamentals, fundamentals
 from monitor_health import report_failure
 from notify import send_discord
 from official_evidence import find_8k_evidence, recent_filings, ticker_map
-from opportunity_alert import held_symbols, load_json
 from personal_portfolio_report import live_snapshot
 from toss_client import TossClient
 
 
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / "web_opportunity_state.json"
+PORTFOLIO = ROOT / "portfolio.json"
+
+
+def load_json(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return default
+
+
+def held_symbols() -> set[str]:
+    return set((load_json(PORTFOLIO, {}).get("holdings") or {}).keys())
 OLLAMA_URL = "http://localhost:11434/api/generate"
 from config import NEWS_LLM_MODEL as MODEL
 LOOKBACK_HOURS = 72
@@ -314,8 +325,7 @@ def format_alert(item: dict) -> str:
 
 def run(send: bool = False) -> int:
     load_dotenv(ROOT / ".env")
-    state = load_json(STATE, load_json(ROOT / "opportunity_alert_state.json",
-                                      {"seen": {}, "alerted_tickers": {}}))
+    state = load_json(STATE, {"seen": {}, "alerted_tickers": {}})
     now = datetime.now(timezone.utc)
     recent = (now - timedelta(days=14)).isoformat()
     seen = {url: stamp for url, stamp in (state.get("seen") or {}).items() if stamp >= recent}

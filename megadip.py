@@ -75,8 +75,9 @@ def fetch_rsi(tickers):
     return out
 
 
-def section_lines(positions: dict, rsi: dict) -> list:
-    """메가캡 딥 섹션 본문 라인(헤더/펜스 없음) — daily_report에서 재사용."""
+def section_lines(positions: dict, rsi: dict, held=()) -> list:
+    """메가캡 딥 섹션 본문 라인(헤더/펜스 없음) — daily_report에서 재사용.
+    held: 이미 들고 있는 종목 — 장기 보유(GOOGL 등)를 딥 진입 후보로 다시 띄우지 않는다."""
     L = ["🎯 메가캡 딥"]
     held_lines = []
     for t, info in (positions or {}).items():
@@ -89,7 +90,8 @@ def section_lines(positions: dict, rsi: dict) -> list:
     else:
         L.append("  관리: 없음")
     cands = [f"{t}(RSI {rsi[t]:.0f})" for t in MEGA
-             if t not in (positions or {}) and classify(rsi.get(t), managed=False)[0] == "ENTRY"]
+             if t not in (positions or {}) and t not in held
+             and classify(rsi.get(t), managed=False)[0] == "ENTRY"]
     L.append(f"  진입후보(RSI<30): {', '.join(cands) if cands else '없음'}")
     return L
 
