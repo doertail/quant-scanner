@@ -114,13 +114,13 @@ def test_news_ordered_by_absolute_change(monkeypatch):
         seen.append(ticker)
         return [_item(ticker, 0)]
 
-    monkeypatch.setattr(nb, "fetch_yf_news", fake)
+    monkeypatch.setattr(nb, "fetch_us_news", fake)
     nb.fetch_news(["UP", "DOWN"], changes={"UP": +1.0, "DOWN": -9.0})
     assert seen[0] == "DOWN"
 
 
 def test_unknown_change_sorts_last(monkeypatch):
-    monkeypatch.setattr(nb, "fetch_yf_news", lambda t, c, l: [_item(t, 0)])
+    monkeypatch.setattr(nb, "fetch_us_news", lambda t, c, l: [_item(t, 0)])
     out = nb.fetch_news(["NOCHG", "TINY"], changes={"TINY": 0.1})
     assert [i["ticker"] for i in out] == ["TINY", "NOCHG"]
 
@@ -142,24 +142,25 @@ def test_kr_ticker_routes_to_naver(monkeypatch):
         return f
 
     monkeypatch.setattr(nb, "fetch_naver_news", record("naver"))
-    monkeypatch.setattr(nb, "fetch_yf_news", record("yf"))
+    monkeypatch.setattr(nb, "fetch_us_news", record("yf"))
     nb.fetch_news(["105560.KS", "TSLA"], changes={"105560.KS": -5.0, "TSLA": 1.0})
     assert calls["naver"] == "105560.KS"
     assert calls["yf"] == "TSLA"
 
 
-NAVER_HTML = """
-<td class="title">
-  <a href="/item/news_read.naver?article_id=1&office_id=2&code=105560" class="tit">KB금융, 3분기 실적 &middot; 배당 발표</a>
-</td>
-<td class="info">연합뉴스</td>
-<td class="date"> 2026.09.04 15:42</td>
-<td class="title">
-  <a href="/item/news_read.naver?article_id=9&office_id=2&code=105560" class="tit">아주 오래된 기사</a>
-</td>
-<td class="info">옛날신문</td>
-<td class="date"> 2020.01.01 09:00</td>
-"""
+NAVER_JSON = [{"total": 2, "items": [
+    {"datetime": "202609041542", "title": "KB금융, 3분기 실적 &middot; 배당 발표",
+     "officeName": "연합뉴스", "officeId": "2", "articleId": "1"},
+    {"datetime": "202001010900", "title": "아주 오래된 기사",
+     "officeName": "옛날신문", "officeId": "2", "articleId": "9"},
+]}]
+
+
+def _naver_resp(payload):
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return payload
+    return lambda *a, **k: R()
 
 
 def test_summary_is_rendered_on_its_own_line_and_truncated():
@@ -380,7 +381,7 @@ def test_fetch_news_probes_every_ticker(monkeypatch):
         seen.append(ticker)
         return [_item(ticker, i) for i in range(2)]
 
-    monkeypatch.setattr(nb, "fetch_yf_news", fake)
+    monkeypatch.setattr(nb, "fetch_us_news", fake)
     cov = {}
     tickers = [f"T{i}" for i in range(6)]        # 2건씩 = 12건, MAX_ITEMS(8) 초과
     nb.fetch_news(tickers, changes={t: -1.0 for t in tickers}, coverage=cov)
@@ -397,20 +398,13 @@ def test_match_token_strips_holding_suffixes():
 
 def test_naver_drops_market_wire_without_company_name(monkeypatch):
     """'코스피 상승 마감'류가 개별 종목에 태깅돼 자리를 먹는 걸 막는다."""
-    html = """
-<td class="title"><a href="/a?x=1">코스피 상승 마감</a></td>
-<td class="info">뉴스1</td><td class="date"> 2026.09.04 15:42</td>
-<td class="title"><a href="/a?x=2">신한은행, 강원 주민 금융지원</a></td>
-<td class="info">연합뉴스</td><td class="date"> 2026.09.04 15:43</td>
-"""
-
-    class R:
-        text = html
-        encoding = "euc-kr"
-
-        def raise_for_status(self): pass
-
-    monkeypatch.setattr("requests.get", lambda *a, **k: R())
+    payload = [{"items": [
+        {"datetime": "202609041542", "title": "코스피 상승 마감", "officeName": "뉴스1",
+         "officeId": "1", "articleId": "1"},
+        {"datetime": "202609041543", "title": "신한은행, 강원 주민 금융지원", "officeName": "연합뉴스",
+         "officeId": "1", "articleId": "2"},
+    ]}]
+    monkeypatch.setattr("requests.get", _naver_resp(payload))
     cutoff = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
     kept = nb.fetch_naver_news("055550.KS", cutoff, limit=5, label="신한지주")
@@ -421,13 +415,7 @@ def test_naver_drops_market_wire_without_company_name(monkeypatch):
 
 
 def test_naver_parses_title_press_link_and_entities(monkeypatch):
-    class R:
-        text = NAVER_HTML
-        encoding = "euc-kr"
-
-        def raise_for_status(self): pass
-
-    monkeypatch.setattr("requests.get", lambda *a, **k: R())
+    monkeypatch.setattr("requests.get", _naver_resp(NAVER_JSON))
 
     cutoff = datetime(2026, 9, 1, tzinfo=timezone.utc)
     out = nb.fetch_naver_news("105560.KS", cutoff, limit=5)
@@ -435,7 +423,7 @@ def test_naver_parses_title_press_link_and_entities(monkeypatch):
     assert len(out) == 1                                  # 오래된 기사는 cutoff로 걸러짐
     assert out[0]["title"] == "KB금융, 3분기 실적 · 배당 발표"   # &middot; 언이스케이프
     assert out[0]["publisher"] == "연합뉴스"
-    # finance.naver.com의 news_read는 JS 리다이렉트라 실제 기사 주소로 바꿔 쓴다
+    # 본문은 n.news.naver.com 기사 주소에서 받는다
     assert out[0]["url"] == "https://n.news.naver.com/mnews/article/2/1"
     assert out[0]["ticker"] == "105560.KS"
 

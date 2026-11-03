@@ -7,8 +7,9 @@ news_brief.py — 보유·관심종목 뉴스 헤드라인 + 한국어 한 문�
 4% 빠진 종목의 기사가 같은 무게로 보이면 안 된다. 자리가 모자라면 **덜 움직인 종목부터** 잘린다.
 
 소스는 시장별로 다르다:
-  · 미국 종목 → yfinance 뉴스 (영어)
-  · 한국 종목(`.KS`/`.KQ`) → 네이버 금융 종목뉴스 (한글, 국내 커버리지가 압도적)
+  · 미국 종목 → Google News RSS (영어). yfinance .news는 2026-10부터 막혔다
+  · 한국 종목(`.KS`/`.KQ`) → 네이버 모바일 증권 뉴스 API (한글). 옛 finance.naver.com HTML은 410
+  · 지수·채권 ETF(QQQM·SPYM·TLT 등)는 제외 — 기사가 편입 종목 변경 같은 것뿐
     yfinance는 국내 종목 뉴스가 부실하다 — 메리츠금융지주는 2건뿐이고 그나마 무관한 기사였다.
 
 관심종목은 토스 API로 못 가져온다(2026-09-04 확인: REST/웹소켓 스펙 전문에 `관심`/`watch` 0건).
@@ -76,7 +77,7 @@ SECTOR_CANDIDATES = 4    # 설명 기사 후보 상한 — LLM 판정 호출을 
 _PR_RE = re.compile(r"후원|챔피언십|골프|KLPGA|KPGA|시상|수상|기부|사회공헌|봉사|장학|캠페인|출항|위촉|임명식")
 # 동반 이동을 설명할 만한 섹터 언급
 _SECTOR_RE = re.compile(r"금융주|은행주|증권주|보험주|금융지주|반도체주|섹터|업종|순매도|순매수|약세|강세|로테이션")
-NAVER_NEWS_URL = "https://finance.naver.com/item/news_news.naver"
+NAVER_NEWS_URL = "https://m.stock.naver.com/api/news/stock/{code}"
 NAVER_BASE = "https://finance.naver.com"
 # finance.naver.com의 news_read는 JS로 여기로 튕긴다. 처음부터 이 주소를 쓴다(본문도 여기 있다).
 NAVER_ARTICLE = "https://n.news.naver.com/mnews/article/{office}/{article}"
@@ -115,11 +116,15 @@ def load_holdings() -> list:
     return list((pf.get("holdings") or {}).keys())
 
 
+# 지수·채권 ETF 기사는 "편입 종목 변경", "5년 전에 샀다면" 같은 것뿐이라 자리만 먹는다
+SKIP_ETFS = {"QQQM", "QQQ", "SPYM", "SPY", "TLT", "SGOV", "VOO"}
+
+
 def target_tickers() -> list:
-    """보유 + 관심. 순서 유지, 중복 제거."""
+    """보유 + 관심 (지수·채권 ETF 제외). 순서 유지, 중복 제거."""
     seen, out = set(), []
     for t in load_holdings() + list(load_watchlist()):
-        if t not in seen:
+        if t not in seen and t not in SKIP_ETFS:
             seen.add(t)
             out.append(t)
     return out
@@ -180,43 +185,45 @@ def _parse_dt(s):
         return None
 
 
-def fetch_yf_news(ticker: str, cutoff: datetime, limit: int) -> list:
-    """미국 종목 — yfinance 뉴스."""
-    import yfinance as yf
+def fetch_us_news(ticker: str, cutoff: datetime, limit: int) -> list:
+    """미국 종목 — Google News RSS. (yfinance .news는 2026-10부터 'YAHOO DOWN' 예외만 낸다)"""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+    from urllib.parse import urlencode
 
+    import requests
+
+    url = "https://news.google.com/rss/search?" + urlencode(
+        {"q": f"{ticker} stock when:2d", "hl": "en-US", "gl": "US", "ceid": "US:en"})
     try:
-        raw = yf.Ticker(ticker).news or []
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
     except Exception:
         return []
 
     out = []
-    for it in raw:
+    for it in root.findall("./channel/item"):
         if len(out) >= limit:
             break
-        c = it.get("content") or {}
-        dt = _parse_dt(c.get("pubDate"))
-        title = (c.get("title") or "").strip()
-        url = ((c.get("clickThroughUrl") or c.get("canonicalUrl") or {}) or {}).get("url")
-        if not (dt and title and url) or dt < cutoff:
+        publisher = (it.findtext("source") or "").strip()
+        title = (it.findtext("title") or "").strip()
+        if publisher and title.endswith(" - " + publisher):
+            title = title[: -len(publisher) - 3]   # 구글은 제목 끝에 매체명을 붙인다
+        try:
+            dt = parsedate_to_datetime(it.findtext("pubDate") or "")
+        except (TypeError, ValueError):
             continue
-        out.append({
-            "ticker": ticker,
-            "title": title,
-            "publisher": ((c.get("provider") or {}).get("displayName") or "").strip(),
-            "url": url,
-            "dt": dt,
-            # yfinance summary는 영어 원문 그대로 — 발췌 폴백이자 LLM 입력이 된다
-            "summary": (c.get("summary") or c.get("description") or "").strip(),
-            "raw": (c.get("summary") or c.get("description") or "").strip(),
-        })
+        link = (it.findtext("link") or "").strip()
+        if (not (title and link) or dt < cutoff or "_" in title.split()[0]
+                or ("Stock Price" in title and "Quote" in title)):
+            continue                                # 깨진 제목("META_TITLE_QUOTE")·시세 페이지
+        # RSS에는 본문이 없다 — 제목이 곧 요약 입력
+        out.append({"ticker": ticker, "title": title, "publisher": publisher, "url": link,
+                    "dt": dt, "summary": "", "raw": title})
     return out
 
 
-_NAVER_ROW = re.compile(
-    r'<td class="title">\s*<a href="([^"]+)"[^>]*>(.*?)</a>.*?'
-    r'<td class="info">(.*?)</td>\s*<td class="date">\s*(.*?)</td>',
-    re.S,
-)
 _NAVER_IDS = re.compile(r"article_id=(\d+).*?office_id=(\d+)")
 _NAVER_BODY = re.compile(r'<article[^>]*id="dic_area"[^>]*>(.*?)</article>', re.S)
 
@@ -345,26 +352,29 @@ def is_pr(title: str) -> bool:
 
 
 def _naver_rows(code: str, cutoff: datetime):
-    """(dt, title, press, href) 최신순. 네트워크 실패는 빈 결과."""
+    """(dt, title, press, href) 최신순. 네트워크 실패는 빈 결과.
+    finance.naver.com 종목뉴스 HTML이 2026-10 410 Gone → 모바일 증권 JSON API로 바꿨다."""
     import requests
 
     try:
-        r = requests.get(NAVER_NEWS_URL, params={"code": code, "page": 1},
+        r = requests.get(NAVER_NEWS_URL.format(code=code), params={"pageSize": 20, "page": 1},
                          headers=_UA, timeout=10)
         r.raise_for_status()
+        groups = r.json()
     except Exception:
         return
-    r.encoding = "euc-kr"
-    for href, title, press, date_s in _NAVER_ROW.findall(r.text):
-        try:
-            dt = datetime.strptime(_clean(date_s), "%Y.%m.%d %H:%M").replace(tzinfo=KST)
-        except ValueError:
-            continue
-        if dt < cutoff:
-            continue
-        title = _clean(title)
-        if title:
-            yield dt, title, _clean(press), _clean(href)
+    for g in groups or []:
+        for it in g.get("items") or []:
+            try:
+                dt = datetime.strptime(it["datetime"], "%Y%m%d%H%M").replace(tzinfo=KST)
+            except (KeyError, ValueError):
+                continue
+            title = _clean(it.get("title") or "")
+            if dt < cutoff or not title:
+                continue
+            # 기존 본문 수집(_NAVER_IDS → n.news.naver.com)을 그대로 쓰도록 같은 형태로 넘긴다
+            href = f"article_id={it.get('articleId', '')}&office_id={it.get('officeId', '')}"
+            yield dt, title, _clean(it.get("officeName") or ""), href
 
 
 def fetch_naver_news(ticker: str, cutoff: datetime, limit: int, label: str | None = None) -> list:
@@ -549,7 +559,7 @@ def fetch_news(tickers, hours: int = DEFAULT_HOURS, changes: dict | None = None,
         if is_kr(t):
             got = fetch_naver_news(t, cutoff, MAX_PER_TICKER, label=labels.get(t))
         else:
-            got = fetch_yf_news(t, cutoff, MAX_PER_TICKER)
+            got = fetch_us_news(t, cutoff, MAX_PER_TICKER)
         fresh = [it for it in got if it["url"] not in seen_urls]
         seen_urls.update(it["url"] for it in fresh)
         items.extend(fresh)
