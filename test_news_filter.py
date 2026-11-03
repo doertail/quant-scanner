@@ -28,11 +28,11 @@ def test_payload_and_parse(monkeypatch):
         return _Resp('{"verdict":"SKIP","score":0.05,"summary":"파산 신청"}')
 
     monkeypatch.setattr(news_filter.requests, 'post', fake_post)
-    out = news_filter.analyze_news_sentiment('XYZ', _news('XYZ files for bankruptcy'), 'qwen3.5:9b')
+    out = news_filter.analyze_news_sentiment('XYZ', _news('XYZ files for bankruptcy'), 'qwen3:14b')
 
     assert out == {'verdict': 'SKIP', 'score': 0.05, 'summary': '파산 신청'}
     assert sent['url'].endswith('/api/chat')
-    assert sent['body']['model'] == 'qwen3.5:9b'
+    assert sent['body']['model'] == 'qwen3:14b'
     assert sent['body']['think'] is False          # 켜지면 지연 3배 + JSON 깨짐
     assert sent['body']['stream'] is False
     assert sent['body']['format'] == news_filter._VERDICT_SCHEMA

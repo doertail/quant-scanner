@@ -97,4 +97,4 @@ EARNINGS_BLOCK_DAYS    = 2
 # 뉴스 감성 필터
 NEWS_FILTER_ENABLE = True     # 로컬 Ollama로 분석 — 끄면 전 종목 감성 0.50 상수가 된다
 NEWS_FILTER_TOP_N  = 5        # 전략별 상위 N개만 분석 (최대 15 호출)
-NEWS_LLM_MODEL     = 'qwen3.5:9b'   # `ollama list` 이름. 서버 죽어 있으면 전부 PASS 폴백
+NEWS_LLM_MODEL     = 'qwen3:14b'    # `ollama list` 이름. 서버 죽어 있으면 전부 PASS 폴백

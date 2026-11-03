@@ -28,7 +28,7 @@ from toss_client import TossClient
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / "web_opportunity_state.json"
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "exaone3.5:latest"
+from config import NEWS_LLM_MODEL as MODEL
 LOOKBACK_HOURS = 72
 QUERIES = (
     '("cybersecurity" OR "AI security") (adoption OR customer OR demand OR contract) when:3d',
@@ -137,7 +137,7 @@ def infer_industry_lead(articles: list[dict], held: set[str], seen: set[str],
                      ensure_ascii=False)
     )
     response = requests.post(OLLAMA_URL, json={"model": MODEL, "prompt": prompt,
-                             "stream": False, "format": "json",
+                             "stream": False, "format": "json", "think": False,
                              "options": {"temperature": 0}}, timeout=120)
     response.raise_for_status()
     row = json.loads(response.json()["response"])
@@ -226,7 +226,7 @@ def select_leads(articles: list[dict], held: set[str], seen: set[str],
                      ensure_ascii=False)
     )
     response = requests.post(OLLAMA_URL, json={"model": MODEL, "prompt": prompt,
-                             "stream": False, "format": "json",
+                             "stream": False, "format": "json", "think": False,
                              "options": {"temperature": 0}}, timeout=150)
     response.raise_for_status()
     parsed = json.loads(response.json()["response"])

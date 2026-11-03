@@ -29,7 +29,7 @@ PORTFOLIO = ROOT / "portfolio.json"
 AV_URL = "https://www.alphavantage.co/query"
 TOPICS = ("technology", "energy_transportation", "life_sciences")
 LOOKBACK_HOURS = 72
-MODEL = "exaone3.5:latest"
+from config import NEWS_LLM_MODEL as MODEL
 OLLAMA_URL = "http://localhost:11434/api/generate"
 SKIP_SOURCES = {"MarketBeat", "GuruFocus", "Simply Wall Street", "Stock Titan",
                 "Kalkine Media", "StocksToTrade", "Law Commentary"}
@@ -165,7 +165,7 @@ def choose_one(items: list[dict]) -> dict | None:
         + json.dumps(list(enumerate(items)), ensure_ascii=False)
     )
     r = requests.post(OLLAMA_URL, json={
-        "model": MODEL, "prompt": prompt, "stream": False, "format": "json",
+        "model": MODEL, "prompt": prompt, "stream": False, "format": "json", "think": False,
         "options": {"temperature": 0},
     }, timeout=90)
     r.raise_for_status()
@@ -259,7 +259,7 @@ def review_candidate(item: dict) -> dict:
     )
     try:
         response = requests.post(OLLAMA_URL, json={"model": MODEL, "prompt": prompt,
-                                                   "stream": False, "format": "json",
+                                                   "stream": False, "format": "json", "think": False,
                                                    "options": {"temperature": 0}}, timeout=120)
         response.raise_for_status()
         analysis = json.loads(response.json()["response"])

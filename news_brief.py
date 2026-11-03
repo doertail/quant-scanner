@@ -36,6 +36,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from config import NEWS_LLM_MODEL
+
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")   # ALPHAVANTAGE_API_KEY — 단독 실행에도 필요
 WATCHLIST_FILE = BASE_DIR / "watchlist.json"
@@ -53,8 +55,8 @@ WITH_SUMMARY = True      # 끄면 헤드라인만 (한 통에 더 많이 들어�
 
 USE_LLM_SUMMARY = True   # 끄면 원문 발췌로 폴백
 OLLAMA_URL = "http://localhost:11434/api/generate"
-# exaone3.5 = LG 한국어 특화. 실측(2026-09-04) 국내 기사 6.3s / qwen2.5:14b는 20.2s에 품질은 비슷.
-OLLAMA_MODEL = "exaone3.5:latest"
+# exaone3.5(한국어 특화, 6.3s/건)를 쓰다가 2026-11 디스크 정리로 삭제 → 남아 있는 qwen3:14b로 통일.
+OLLAMA_MODEL = NEWS_LLM_MODEL  # config 한 곳에서 관리 (2026-11 exaone3.5 삭제 → qwen3:14b)
 OLLAMA_TIMEOUT = 40      # 한 건. launchd 잡이 멈추면 안 되니 짧게.
 SUMMARY_WORKERS = 4
 _SUMMARY_PROMPT = (
@@ -269,7 +271,7 @@ def llm_summarize(text: str, model: str = "") -> str:
         r = requests.post(OLLAMA_URL, timeout=OLLAMA_TIMEOUT, json={
             "model": model or OLLAMA_MODEL,
             "prompt": _SUMMARY_PROMPT + text[:2000],
-            "stream": False,
+            "stream": False, "think": False,
             "options": {"temperature": 0.2, "num_predict": 120},
         })
         r.raise_for_status()
@@ -475,7 +477,7 @@ def explains_move(article_title: str, body: str, names, direction: str) -> bool:
 
     try:
         r = requests.post(OLLAMA_URL, timeout=OLLAMA_TIMEOUT, json={
-            "model": OLLAMA_MODEL, "prompt": prompt, "stream": False,
+            "model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "think": False,
             "options": {"temperature": 0.0, "num_predict": 10},
         })
         r.raise_for_status()
