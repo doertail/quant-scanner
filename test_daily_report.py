@@ -22,6 +22,36 @@ def test_report_has_regime_and_holdings():
     assert "QQQM" in r and "HSY" in r
     assert "DOW" in r            # 진입 후보
     assert "QQQ" in r            # forward 벤치마크
+    assert "내 투자 정책" in r and "기존 퀀트 전략 신호" in r
+    assert "퀀트 페이퍼 forward" in r
+    assert "장기 핵심 적립" in r
+
+
+def test_panic_review_is_manual_and_requires_vix_over_30():
+    from datetime import datetime
+
+    fresh = {**SIG, "date": datetime.today().strftime("%Y-%m-%d")}
+    normal = dr.build_report(SIG, HOLD, FWD)
+    panic = dr.build_report({**fresh, "regime": {**SIG["regime"], "vix": 31.0}}, HOLD, FWD)
+    assert "추가 매수 여부와 금액" not in normal
+    assert "실제 예수금 확인 후 직접 판단" in panic
+    assert "추가 $100 매수마다 적립 여력 5거래일분 감소" in panic
+    stale = dr.build_report({**fresh, "regime": {**SIG["regime"], "vix": 31.0}},
+                            HOLD, FWD, sync_line="⚠️ 토스 동기화 기록 없음")
+    assert "적립 여력 5거래일분" not in stale
+    old_signal = dr.build_report({**SIG, "regime": {**SIG["regime"], "vix": 31.0}}, HOLD, FWD)
+    assert "새 스캔 전까지 추가 매수 판단 보류" in old_signal
+
+
+def test_protected_holding_exit_is_not_shown_as_sell_action():
+    sig = {**SIG, "exits": [
+        {"ticker": "TLT", "signal": "STOP"},
+        {"ticker": "HSY", "signal": "STOP"},
+    ]}
+    r = dr.build_report(sig, HOLD, FWD)
+    assert "🔒 보호 보유 TLT" in r
+    assert "🔴 매도  TLT" not in r
+    assert "🔴 매도  HSY" in r
 
 
 def test_report_pnl_emoji():

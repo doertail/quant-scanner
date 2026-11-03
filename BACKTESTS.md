@@ -584,10 +584,42 @@ are $100k-scale; only the ratio transfers to the paper account.
 
 ---
 
+## 12. QQQM Core: VIX Panic Layering (`backtest_qqqm_panic_layers.py`)
+
+Run 2026-09-26. QQQ adjusted prices stand in for QQQM before its inception; both
+track the Nasdaq-100. Daily QQQ/VIX data: 2005-01-03 to 2026-09-25. A new episode
+starts when VIX closes above 30 and resets only after it closes below 20. There
+were 18 episodes; 17 have a full 252-trading-day follow-up and 15 have 756 days.
+
+Compare the **same $1 of extra money per episode**: all at the next open after
+VIX > 30, or one-third then the remaining thirds after QQQ closes 5%/10% below
+the first fill. The second and third fills also occur at the following open.
+An alternative uses VIX > 40/50 for those fills. Shares are held; unused cash
+remains at 0% yield. Buy cost is 0.1% per fill. The common $20/day QQQM core
+purchase and future deposits are excluded from all variants.
+
+| Follow-up | Rule | Beat all-at-once | Median terminal difference | Avg cash invested | Median max drawdown (all-at-once) |
+|---|---|---:|---:|---:|---:|
+| 1 trading year, 17 episodes | QQQ −5%/−10% | 47.1% | −3.58% | 52.9% | −9.4% (−22.8%) |
+| 1 trading year, 17 episodes | VIX 40/50 | 41.2% | −2.04% | 49.0% | −9.4% (−22.8%) |
+| 3 trading years, 15 episodes | QQQ −5%/−10% | 26.7% | −16.43% | 53.3% | −12.8% (−29.6%) |
+| 3 trading years, 15 episodes | VIX 40/50 | 13.3% | −18.43% | 46.7% | −12.1% (−29.6%) |
+
+The proposed price ladder completed all three buys in only 3/17 one-year
+episodes; 10/17 stopped after the first third. The lower drawdown largely
+reflects holding almost half the episode budget in cash. For a long-term
+QQQM holder seeking growth, this test **does not support reserving an entire
+three-tranche budget** for each VIX event. It also does not test buying extra
+with new money that becomes available only during the panic. Do not replace
+the live strategy or submit orders from these results.
+
+---
+
 ## Caveats Common to All Backtests
 
 - **Survivorship bias**: ticker lists used today; delisted names absent.
-- **No transaction costs / slippage** (except strategy D which applies ±0.2%).
+- **Transaction cost treatment differs by section**: most omit costs; strategy D
+  applies ±0.2%, and §12 applies a 0.1% buy cost.
 - **Lookback windows are tight in places** — Strategy C has only 16 events across 11
   years. The point estimates are striking but the confidence intervals are wide.
 - **Past ≠ future**. These calibrations may stop working tomorrow.

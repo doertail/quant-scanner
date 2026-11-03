@@ -3,6 +3,7 @@ pandas
 lxml
 python-dotenv
 requests
+beautifulsoup4
 google-genai
 discord.py
 alpaca-py

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.quantscanner.opportunity-alert</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>/Users/jihun/workspace/quant-scanner/run_opportunity_alert.sh</string>
+    </array>
+    <!-- Asia/Seoul local time, once daily after the US market closes. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/jihun/workspace/quant-scanner/opportunity_alert.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jihun/workspace/quant-scanner/opportunity_alert.err</string>
+</dict>
+</plist>

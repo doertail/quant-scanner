@@ -96,19 +96,33 @@ class TossClient:
 
     # ─── 공통 요청 ─────────────────────────────────────────────────────────
     def _get(self, path: str, account_seq: int | str | None = None, params: dict | None = None) -> dict:
-        headers = {"Authorization": f"Bearer {self._get_token()}"}
-        if account_seq is not None:
-            headers["X-Tossinvest-Account"] = str(account_seq)
+        for attempt in range(2):
+            headers = {"Authorization": f"Bearer {self._get_token()}"}
+            if account_seq is not None:
+                headers["X-Tossinvest-Account"] = str(account_seq)
 
-        try:
-            resp = requests.get(
-                BASE_URL + path,
-                headers=headers,
-                params=params,
-                timeout=DEFAULT_TIMEOUT,
-            )
-        except requests.RequestException as e:
-            raise TossAPIError(f"{path} 네트워크 오류: {e}") from e
+            try:
+                resp = requests.get(
+                    BASE_URL + path,
+                    headers=headers,
+                    params=params,
+                    timeout=DEFAULT_TIMEOUT,
+                )
+            except requests.RequestException as e:
+                raise TossAPIError(f"{path} 네트워크 오류: {e}") from e
+
+            # A second process can issue a token while this client is alive.
+            # Toss then revokes this client's cached token. GET is safe to retry.
+            if resp.status_code == 401 and attempt == 0:
+                try:
+                    code = (resp.json().get("error") or {}).get("code")
+                except ValueError:
+                    code = None
+                if code == "token-revoked":
+                    self._token = None
+                    self._token_expiry = 0.0
+                    continue
+            break
 
         if resp.status_code != 200:
             raise TossAPIError(

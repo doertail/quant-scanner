@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 
 import signals_io
 from config import A_MAX_SLOTS, B_MAX_SLOTS
+from personal_policy import DAILY_QQQM_USD, PANIC_REVIEW_VIX, PROTECTED_HOLDINGS, ROLES
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -33,7 +34,6 @@ MORNING = BASE_DIR / "signals_morning.json"  # 23:00 스캔 직전 run_scanner.s
 PORTFOLIO = BASE_DIR / "portfolio.json"
 FORWARD = BASE_DIR / "forward_equity.json"
 SYNC_STATE = BASE_DIR / "toss_sync_state.json"  # toss_sync.py --apply 마지막 성공 날짜
-RESERVE_USD = 1250  # VIX 공포 예비탄 (참고 표시용)
 DISCORD_SAFE_LEN = 1900  # notify.send_discord의 청크 크기 — 넘으면 2통으로 쪼개진다
 NEWS_WEBHOOK_ENV = "DISCORD_NEWS_WEBHOOK_URL"  # 설정되면 뉴스를 #경제로 분리 발송
 
@@ -100,13 +100,35 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
     if sync_line:
         L.append(f"**{sync_line}**")
 
-    # 1. 액션 — 오늘 손을 움직일 것이 맨 위. 나머지는 참고자료다.
-    L += ["", "⚡ **액션**", "```"]
-    exits = signals.get("exits", []) or []
+    # 개인 투자 정책과 스캐너 신호는 판단 대상이 다르다.
+    vix = r.get("vix")
+    L += ["", "🧭 **내 투자 정책**",
+          f"QQQM: 토스 기존 ${DAILY_QQQM_USD:.0f}/거래일 적립 유지 (이 리포트가 주문하지 않음)"]
+    if isinstance(vix, (int, float)) and vix > PANIC_REVIEW_VIX:
+        if signals_io.is_stale(date):
+            L.append("과거 VIX 공포 신호: 새 스캔 전까지 추가 매수 판단 보류")
+        else:
+            cash_for_review = signals.get("portfolio_cash")
+            if isinstance(cash_for_review, (int, float)) and cash_for_review >= 0 and not sync_line:
+                L.append(f"공포장: USD 예수금 ${cash_for_review:,.0f} · "
+                         f"QQQM 기본 적립 약 {cash_for_review/DAILY_QQQM_USD:.0f}거래일분. "
+                         "추가 $100 매수마다 적립 여력 5거래일분 감소. "
+                         "추가 매수 여부와 금액은 실제 예수금 확인 후 직접 판단")
+            else:
+                L.append("공포장: 추가 매수 여부와 금액을 실제 예수금 확인 후 직접 판단")
+    L.append("CRWD·TSLA: 회사 전망 검토 대상 · SPYM·TLT: 현재 보유, 자동 매도 대상 아님")
+
+    # 기존 퀀트 전략의 신호. 개인 핵심 보유의 매도 신호로 읽지 않게 구분한다.
+    L += ["", "⚡ **기존 퀀트 전략 신호 (실주문 아님)**", "```"]
+    all_exits = signals.get("exits", []) or []
+    exits = [e for e in all_exits if e.get("ticker") not in PROTECTED_HOLDINGS]
+    ignored_exits = [e for e in all_exits if e.get("ticker") in PROTECTED_HOLDINGS]
     for e in exits:
         L.append(f"🔴 매도  {str(e.get('ticker','?')):<5}  {e.get('signal','')}")
     if not exits:
         L.append("매도 신호 없음")
+    for e in ignored_exits:
+        L.append(f"🔒 보호 보유 {str(e.get('ticker','?')):<5}  퀀트 매도 신호 무시")
     ent = signals.get("entries", {}) or {}
     # 순위는 전략 **안에서만** 매긴다. A는 RSI 역수, B는 6M 랭크 기반이라 점수 스케일이 달라
     # 섞어서 줄 세우면 항상 B가 이긴다 — 신호가 아니라 공식 차이다.
@@ -135,10 +157,10 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
 
     # 2. 보유 — 티커/손익 열 맞춰서 세로로 훑게
     cash = signals.get("portfolio_cash")
-    cash_s = f" · 현금 ${cash:,.0f}(예비탄 ${RESERVE_USD:,})" if cash is not None else ""
+    cash_s = f" · 현금 ${cash:,.0f}" if cash is not None else ""
     L += ["", f"💼 **보유 {len(holdings)}종목{cash_s}**", "```"]
     for t, p in holdings.items():
-        strat = p.get("strategy", "?")
+        strat = ROLES.get(t, p.get("strategy", "?"))
         px = prices.get(t)
         if px and p.get("buy_price"):
             pnl = (px - p["buy_price"]) / p["buy_price"] * 100
@@ -162,7 +184,7 @@ def build_report(signals: dict, holdings: dict, fwd_last: dict | None,
         v, q = fwd_last.get("value"), fwd_last.get("qqq")
         if v is not None and q:
             pct = (v - q) / q * 100
-            L.append(f"📈 forward ${v:,.0f} vs QQQ ${q:,.0f} · "
+            L.append(f"📈 퀀트 페이퍼 forward ${v:,.0f} vs QQQ ${q:,.0f} · "
                      f"**{pct:+.1f}%** {'✅앞섬' if pct >= 0 else '🔻뒤짐'}")
     hyg = "정상" if r.get("hyg_ok", True) else "⚠️악화"
     vix = r.get("vix")

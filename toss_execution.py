@@ -24,6 +24,7 @@ from toss_client import TossClient, TossAPIError
 from execution_layer import check_price_sanity, count_positions_by_strategy, calc_shares
 import signals_io
 from config import A_MAX_SLOTS, B_MAX_SLOTS
+from personal_policy import PROTECTED_HOLDINGS
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / '.env')
@@ -116,8 +117,8 @@ def process_exits(exits: list, held: dict, portfolio: dict) -> list:
         if t not in held or held[t]['shares'] <= 0:
             log.info(f'{t} 미보유 — 청산 스킵')
             continue
-        if is_core(portfolio.get(t, {})):
-            log.info(f'{t} Core — 자동 매도 안 함')
+        if t in PROTECTED_HOLDINGS or is_core(portfolio.get(t, {})):
+            log.info(f'{t} 개인 보유 정책/Core — 자동 매도 안 함')
             continue
         qty = decide_exit_qty(ex['signal'], held[t]['shares'])
         if qty <= 0:

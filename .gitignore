@@ -32,5 +32,22 @@ execution.log
 # btlib이 받아두는 ^IRX 무위험수익률 캐시 (재생성 가능)
 backtest/.irx_cache.csv
 toss_sync_state.json
+opportunity_alert_state.json
+opportunity_alert.out
+opportunity_alert.err
+thesis_monitor_state.json
+monitor_health_state.json
+thesis_monitor.out
+thesis_monitor.err
 forward_equity_*.json
 backtest/*.log
+# 개인 투자 정책·판단 기록 (공개 레포 — 보유·금액·성향 노출 방지). 새 클론은 personal_policy.example.py 복사
+personal_policy.py
+docs/personal-investment-system.md
+docs/investment-decision-*.md
+docs/crwd-investment-case.md
+docs/akamai-news-case.md
+docs/cybersecurity-candidate-queue.md
+web_opportunity_state.json
+run_opportunity_alert.sh
+run_thesis_monitor.sh

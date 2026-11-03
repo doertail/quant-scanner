@@ -39,5 +39,5 @@ def send_discord(message: str, env_var: str = 'DISCORD_WEBHOOK_URL',
         _log.info(f"Discord 전송 완료 ({len(chunks)}개, {env_var})")
         return True
     except Exception as e:
-        _log.error(f"Discord 전송 실패({env_var}): {e}")
+        _log.error(f"Discord 전송 실패({env_var}): {type(e).__name__}")
         return False

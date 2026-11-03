@@ -57,6 +57,13 @@ def test_process_exits_skips_core_and_unheld():
     assert len(intents) == 1
     assert intents[0]['ticker'] == 'HSY' and intents[0]['qty'] == 2.0
 
+def test_personal_holdings_protected_even_if_strategy_tag_drifts():
+    held = {t: {'shares': 1.0, 'last': 100.0}
+            for t in ('QQQM', 'CRWD', 'TSLA', 'SPYM', 'TLT', 'HSY')}
+    exits = [{'ticker': t, 'signal': 'STOP', 'strategy': 'A'} for t in held]
+    intents = te.process_exits(exits, held, {})
+    assert [intent['ticker'] for intent in intents] == ['HSY']
+
 def test_process_entries_caps_and_cash():
     # price_fn: 스캐너가와 동일 현재가 반환 (sanity 통과)
     price_fn = lambda t: {'DOW': 30.0, 'AAPL': 190.0}.get(t)

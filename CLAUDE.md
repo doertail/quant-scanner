@@ -44,6 +44,10 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `toss_order.py` | **실주문 CLI (Phase 2, 실제 돈)** — `python toss_order.py SYMBOL BUY/SELL QTY [--type LIMIT --price P] [--yes]`. 기본 드라이 프리뷰, **`--yes`로만 실제 전송**, 킬스위치·장운영 가드레일. `TossClient.create_order`(POST /api/v1/orders) 사용. 미국주식은 미국장 개장 필요. 소수점은 `--amount`(orderAmount) 사용 |
 | `daily_report.py` | 일일 기술적 요약 → 디스코드 (**LLM·비용 0**, 로컬 파일 기반). signals/portfolio/forward_equity → 레짐+보유손익(토스 시세 best-effort)+액션+forward vs QQQ. `[--no-send] [--no-prices]`. launchd(run_forward.sh)가 매일 자동 전송 |
 | `news_brief.py` | 보유·관심종목 뉴스 + **한국어 한 문장 요약** → 리포트 섹션 (키 불필요, 비용 0). 대상 = `portfolio.json` 보유 + `watchlist.json`. **중요도 = 당일 등락률 절대값**(많이 움직인 종목 먼저, 자리 부족하면 덜 움직인 것부터 잘림). 소스: 미국=yfinance / 한국=네이버 금융 종목뉴스(회사명 없는 시황기사는 버림). 요약=**로컬 Ollama `exaone3.5`**(외부 전송 없음, 꺼져 있으면 원문 발췌로 폴백). 코드블록 **밖**에 붙여야 링크가 눌린다. `python news_brief.py [--hours N] [--no-llm]` |
+| `opportunity_alert.py` | 뉴스 후보와 최근 SEC 8-K 사건을 대조한 뒤 토스 가격·예수금·QQQM 적립 기간 및 SEC XBRL 직전 12개월 재무를 포함해 `DISCORD_NEWS_WEBHOOK_URL`로 선제 알림. 기본 미리보기, `--send`일 때만 전송·중복 상태 저장. 독립 launchd `com.quantscanner.opportunity-alert`이 매일 09:00/15:00/21:00 KST 실행. 자동 매수 승인·주문은 하지 않음. |
+| `thesis_monitor.py` | CRWD·TSLA 신규 8-K/10-Q/10-K 공시와 EX-99.1 실적 발표문을 SEC에서 감시. CRWD ARR·신규 ARR를 직전 공식 기준선과 비교하고 재무 악화 단서·잠정 행동을 디스코드로 알림. 첫 실행은 기준선만 설정. 독립 launchd `com.quantscanner.thesis-monitor` 매일 21:10 KST. 자동 매도 주문은 하지 않음. |
+| `personal_policy.py` | 개인 보유 역할·보호 목록(`PROTECTED_HOLDINGS` = 자동 매도 금지)·QQQM 적립액. **.gitignore**(공개 레포) — 새 클론은 `cp personal_policy.example.py personal_policy.py`. 투자 판단 기록 `docs/personal-investment-system.md` 등도 로컬 전용 |
+| `monitor_health.py` | 뉴스·보유 공시 예약 감시 실패 시 #경제 디스코드에 24시간당 한 번까지 상태 경고. |
 | ↳ 동반 이동 | 3종목 이상이 같은 방향 2.5%↑ → 개별 뉴스 대신 한 줄로 묶고 **코스피 대비** 표기(섹터만인지 시장 전체인지). 설명 기사는 버렸던 시황 기사에서 찾되 **Ollama가 '이 기사가 그 방향 움직임을 설명하나' 판정**해서 통과한 것만 붙인다. 못 찾으면 억지로 안 붙이고 '못 찾음'이라고 말한다 |
 | ↳ 커버리지 | 마지막 `📋` 줄이 **안 보이는 종목의 이유**를 밝힌다(`자리부족` vs `뉴스없음`). 관심종목 전부가 개별뉴스·동반이동·이 줄 중 하나로 설명된다 |
 | `add_news_webhook.sh` | `#경제` 웹훅을 `.env`에 등록(.gitignore). **클립보드에서 읽는다** — 웹훅 URL을 채팅·명령줄에 노출하지 않기 위함. 등록 전 실제 전송 테스트 |
