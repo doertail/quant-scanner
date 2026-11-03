@@ -615,6 +615,79 @@ the live strategy or submit orders from these results.
 
 ---
 
+## 13. Monthly Budget: Small DCA + Laddered Panic All-In (`backtest_dca_panic_ladder.py`)
+
+Run 2026-11-03. QQQ (QQQM proxy) + VIX, 1999-03 to 2026-11. Same **$600/month** in every
+variant, contributed daily ($600×12/252). Part goes into QQQ every day; the rest
+accumulates in a pot. A panic starts when the prior close VIX > 30 (re-armed after
+VIX < 20). At the start the pot is split into one tranche per ladder rung, each bought at
+the next open once prior VIX exceeds that rung; new savings during a panic are bought
+immediately. `flush` = buy the unused pot when the panic ends (VIX < 20). The pot earns
+^IRX T-bill yield ("국채") or 0% ("현금"). 0.1% cost on every buy. Rolling windows start
+every 21 trading days (overlapping, so not independent). Baseline = all $600 into DCA.
+
+Median terminal-value difference vs baseline (win rate in parentheses), pot in T-bills, flush on:
+
+| DCA/pot | Ladder | 3 years (296 windows) | 5 years (272 windows) |
+|---|---|---:|---:|
+| $500/$100 | 30 all-in | −0.43% (39%) | −0.64% (25%) |
+| $420/$180 | 30 all-in | −0.77% (39%) | −1.16% (25%) |
+| $420/$180 | 30/35/40 | −1.13% (36%) | −1.47% (21%) |
+| $420/$180 | 30/40/50 | −1.26% (30%) | −1.65% (18%) |
+| $300/$300 | 30/35/40 | −1.89% (36%) | −2.45% (21%) |
+| $200/$400 | 30/35/40 | −2.52% (36%) | −3.27% (21%) |
+
+At $420/$180, 30/35/40: cash instead of T-bills costs ~0.3–0.5%p more; **without flush**
+the median improves to −0.64% (3y) / −0.89% (5y), because flush buys the leftover after
+the market has recovered, while keeping it waits for the next panic. Median worst
+unrealized P&L (value / contributions − 1) is −9.2% (3y) / −12.4% (5y) vs −11.2% / −15.4%
+for pure DCA.
+
+**Reading.** No variant beats pure DCA in the median; a larger pot and a deeper ladder
+cost more, and one-shot at 30 beats any ladder. The cost of the user's preferred shape
+($420/$180, 30/35/40) is about 1–1.5% of terminal value over 3–5 years — small, and in
+exchange the pot cushions the worst drawdown by ~2–3%p. By 5-year start year it wins
+only when the window opens just before a crash (1999–2000, 2007–08, 2018: +0.2% to +1.1%)
+and loses most in long calm bulls (2010–2013 starts: −4% to −6%, the pot sat idle). 1999–2026 QQQ is a strong bull sample, which favors DCA. Choose the
+panic pot for behavior (buying in fear without selling), not for expected return.
+
+---
+
+## 14. Public Tactical Allocation Strategies vs QQQ DCA (`backtest_tactical_vs_dca.py`)
+
+Run 2026-11-03. Candidates from a GitHub/literature survey. Month-end signals and fills,
+**$600/month** contributed into each strategy's target weights, 0.1% turnover cost,
+**Korean overseas capital-gains tax** (annual net realized gain above $1,850 ≈ ₩2.5M taxed
+22%, deducted at year end), and terminal value shown *after* a hypothetical full
+liquidation. Data 2007-02 to 2026-10 (DBC inception + 12-month warm-up). GEM and VAA use
+QQQ in place of SPY. Rolling windows start every month.
+
+| Strategy | 3y median vs DCA (win rate) | 5y median vs DCA (win rate) | 5y worst / best | Sells/yr |
+|---|---:|---:|---:|---:|
+| QQQ DCA (baseline) | — | — | — | 0 |
+| QQQ 10-month SMA → SHY | −6.2% (22%) | −11.1% (20%) | −18% / +11% | 1.8 |
+| GEM (QQQ/EFA/AGG, 12M abs+rel mom.) | −4.1% (15%) | −8.0% (2%) | −19% / +1% | 1.3 |
+| VAA-G4 (QQQ/EFA/EEM/AGG; LQD/IEF/SHY) | −12.4% (6%) | −21.2% (0%) | −36% / −2% | 7.8 |
+| GTAA5 (Faber, 5 assets × 10M SMA) | −15.5% (6%) | −23.7% (0%) | −39% / −3% | 12.1 |
+
+By 5-year start year, only the QQQ SMA filter (2014, 2018–2020 starts: +1% to +11%) and GEM
+(2018: +1%) ever beat DCA; diversified GTAA5/VAA lost in every start year.
+
+**Reading.** For a *contributor*, timing filters fight DCA: crashes are when new money buys
+cheapest, and the filters move contributions into bonds/cash exactly then (2008/2009 starts:
+SMA −16%). Diversified models also gave up the Nasdaq-100's 2009–2026 run, and monthly
+rebalancing turns gains into taxable events. They do cut the worst unrealized loss slightly
+(median −2.6% to −4.0% vs −4.7%, monthly granularity), which does not compensate. Published
+pre-2008 results did not carry over to this sample. Keep the QQQM DCA core.
+
+*Dot-com check (QQQ 10M SMA only, 1999-03 start; SHY replaced by 0% cash before its
+2002-07 inception):* median vs DCA −5.6% (3y, wins 29%), −9.1% (5y, 24%), −18.6% (10y, 3%).
+It wins big only when the window opens at a bubble top or ends in a crash (best +51% 3y /
++40% 5y around 2000; 2004 start +31% because DCA ended at the 2008 low, $26.8k on $36k paid),
+and loses in most other starts. Insurance with a steep premium for a contributor.
+
+---
+
 ## Caveats Common to All Backtests
 
 - **Survivorship bias**: ticker lists used today; delisted names absent.
