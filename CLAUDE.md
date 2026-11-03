@@ -43,7 +43,7 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 | `forward_test.py` | 페이퍼 forward 검증 — 토스 실시간 시세+스캐너 신호로 가상 포트폴리오 운용, 일별 평가액 + **QQQ 단순보유 벤치마크** 누적(`forward_equity.json`의 `qqq`/`edge_vs_qqq`). "전략 vs 시장" 비교 = 엣지 진짜 여부 판단. `python forward_test.py [--cash N]` |
 | `toss_order.py` | **실주문 CLI (Phase 2, 실제 돈)** — `python toss_order.py SYMBOL BUY/SELL QTY [--type LIMIT --price P] [--yes]`. 기본 드라이 프리뷰, **`--yes`로만 실제 전송**, 킬스위치·장운영 가드레일. `TossClient.create_order`(POST /api/v1/orders) 사용. 미국주식은 미국장 개장 필요. 소수점은 `--amount`(orderAmount) 사용 |
 | `daily_report.py` | 일일 기술적 요약 → 디스코드 (**LLM·비용 0**, 로컬 파일 기반). signals/portfolio/forward_equity → 레짐+보유손익(토스 시세 best-effort)+액션+forward vs QQQ. `[--no-send] [--no-prices]`. launchd(run_forward.sh)가 매일 자동 전송 |
-| `news_brief.py` | 보유·관심종목 뉴스 + **한국어 한 문장 요약** → 리포트 섹션 (키 불필요, 비용 0). 대상 = `portfolio.json` 보유 + `watchlist.json`. **중요도 = 당일 등락률 절대값**(많이 움직인 종목 먼저, 자리 부족하면 덜 움직인 것부터 잘림). 소스: 미국=Google News RSS / 한국=네이버 모바일 증권 API(회사명 없는 시황기사는 버림). 지수·채권 ETF는 대상 제외. 요약=**로컬 Ollama `config.NEWS_LLM_MODEL`(qwen3:14b)**(외부 전송 없음, 꺼져 있으면 원문 발췌로 폴백). 코드블록 **밖**에 붙여야 링크가 눌린다. `python news_brief.py [--hours N] [--no-llm]` |
+| `news_brief.py` | 보유·관심종목 뉴스 + **한국어 한 문장 요약** → 리포트 섹션 (키 불필요, 비용 0). 대상 = **실보유 자동**(`portfolio.json` 미국 + `external_holdings.json` 국내, 매일 아침 toss_sync가 갱신 — 국내는 토스 `get_stocks`의 market으로 `.KS`/`.KQ` 결정) + `watchlist.json`(보유 안 한 관심종목만). **중요도 = 당일 등락률 절대값**(많이 움직인 종목 먼저, 자리 부족하면 덜 움직인 것부터 잘림). 소스: 미국=Google News RSS / 한국=네이버 모바일 증권 API(회사명 없는 시황기사는 버림). 지수·채권 ETF는 대상 제외. 요약=**로컬 Ollama `config.NEWS_LLM_MODEL`(qwen3:14b)**(외부 전송 없음, 꺼져 있으면 원문 발췌로 폴백). 코드블록 **밖**에 붙여야 링크가 눌린다. `python news_brief.py [--hours N] [--no-llm]` |
 | `opportunity_alert.py` | 뉴스 후보와 최근 SEC 8-K 사건을 대조한 뒤 토스 가격·예수금·QQQM 적립 기간 및 SEC XBRL 직전 12개월 재무를 포함해 `DISCORD_NEWS_WEBHOOK_URL`로 선제 알림. 기본 미리보기, `--send`일 때만 전송·중복 상태 저장. 독립 launchd `com.quantscanner.opportunity-alert`이 매일 09:00/15:00/21:00 KST 실행. 자동 매수 승인·주문은 하지 않음. |
 | `thesis_monitor.py` | CRWD·TSLA 신규 8-K/10-Q/10-K 공시와 EX-99.1 실적 발표문을 SEC에서 감시. CRWD ARR·신규 ARR를 직전 공식 기준선과 비교하고 재무 악화 단서·잠정 행동을 디스코드로 알림. 첫 실행은 기준선만 설정. 독립 launchd `com.quantscanner.thesis-monitor` 매일 21:10 KST. 자동 매도 주문은 하지 않음. |
 | `personal_execution.py` | **내 전략 자동매매 드라이런**(주문 없음, launchd 07:30 `run_forward.sh` 끝에서). 공포 사다리(VIX 30/35/40마다 공포 시작 시 TLT 평가액의 1/3씩 TLT→QQQM, VIX<20 종료·남은 몫 보관 — BACKTESTS §13) · ETF 아닌 종목 USD 계좌 10% 초과분 매도 · `standing_orders.json` 대기 지정가 재주문 · 예수금 적립 10일분 미만 경고. 상태 `panic_state.json`, 이력 `personal_execution_history.json`(모두 .gitignore) |
@@ -59,7 +59,7 @@ S&P500 + NDX100 전수 스캔 기반 퀀트 트레이딩 시스템.
 |------|------|
 | `portfolio.json` | 현재 포지션 상태 (production 데이터 — 직접 수정 주의, .gitignore) |
 | `external_holdings.json` | 국내 등 외부 보유 (toss_sync가 분리 관리, .gitignore). ⚠️ 토스 응답에 국내분이 0건이면 toss_sync가 **덮어쓰지 않는다** — 전량매도로 비우려면 직접 편집 |
-| `watchlist.json` | 관심종목 `{"티커": "표시이름"}`. 뉴스 대상 = 보유 + 이 목록. 토스 API에 관심종목이 없어 수동 관리. **한국 종목은 `.KS` 접미사 필수**(`105560.KS`=KB금융) — yfinance 규칙. 티커만 있는 배열도 받음 |
+| `watchlist.json` | **보유하지 않은** 관심종목 `{"티커": "표시이름"}`(보유는 자동 포함, .gitignore — 예시 `watchlist.example.json`). 뉴스 대상 = 보유 + 이 목록. 토스 API에 관심종목이 없어 수동 관리. **한국 종목은 `.KS` 접미사 필수**(`105560.KS`=KB금융) — yfinance 규칙. 티커만 있는 배열도 받음 |
 | `signals.json` | 최근 스캔 결과 (.gitignore) |
 | `forward_equity.json` | forward 페이퍼 일별 성과 + QQQ 벤치마크 (.gitignore) |
 | `forward_paper.json` | forward 페이퍼 포트폴리오 상태 (.gitignore) |

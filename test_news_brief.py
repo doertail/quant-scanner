@@ -479,3 +479,15 @@ def test_macro_without_key_is_silent(monkeypatch):
 def test_us_tickers_never_form_a_kospi_comovement():
     ch = {"TEM": -7.2, "HIMS": -6.7, "CRWD": -4.1, nb.KOSPI: -0.2}
     assert nb.comovement_lines(ch, {}, datetime(2026, 9, 1, tzinfo=timezone.utc)) == ([], set())
+
+
+def test_holdings_include_korean_external_with_market_suffix(monkeypatch, tmp_path):
+    pf, ext = tmp_path / "p.json", tmp_path / "e.json"
+    pf.write_text('{"holdings": {"GOOGL": {}}}', encoding="utf-8")
+    ext.write_text('{"214450": {"name": "파마리서치", "market_country": "KR", "yf_ticker": "214450.KQ"},'
+                   ' "316140": {"name": "우리금융지주", "market_country": "KR"}}', encoding="utf-8")
+    monkeypatch.setattr(nb, "PORTFOLIO_FILE", pf)
+    monkeypatch.setattr(nb, "EXTERNAL_FILE", ext)
+    monkeypatch.setattr(nb, "load_watchlist", lambda: {})
+    assert nb.load_holdings() == ["GOOGL", "214450.KQ", "316140.KS"]
+    assert nb.display_labels()["214450.KQ"] == "파마리서치"

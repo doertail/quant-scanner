@@ -43,6 +43,7 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")   # ALPHAVANTAGE_API_KEY — 단독 실행에도 필요
 WATCHLIST_FILE = BASE_DIR / "watchlist.json"
 PORTFOLIO_FILE = BASE_DIR / "portfolio.json"
+EXTERNAL_FILE = BASE_DIR / "external_holdings.json"
 
 # 디스코드 2000자 제한 — 리포트 본문과 한 메시지를 공유하므로 넉넉히 남긴다.
 MAX_ITEMS = 8
@@ -108,12 +109,23 @@ def load_watchlist() -> dict:
     return out
 
 
+def _load_external() -> dict:
+    """toss_sync가 쓰는 국내 등 외부 보유 {코드: {name, yf_ticker, ...}}."""
+    try:
+        return json.loads(EXTERNAL_FILE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
 def load_holdings() -> list:
+    """실보유 = portfolio.json(미국) + external_holdings.json(국내). 사고팔면 다음 동기화 때 자동 반영."""
     try:
         pf = json.loads(PORTFOLIO_FILE.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
-        return []
-    return list((pf.get("holdings") or {}).keys())
+        pf = {}
+    kr = [v.get("yf_ticker") or code + ".KS" for code, v in _load_external().items()
+          if v.get("market_country") == "KR"]
+    return list((pf.get("holdings") or {}).keys()) + kr
 
 
 # 지수·채권 ETF 기사는 "편입 종목 변경", "5년 전에 샀다면" 같은 것뿐이라 자리만 먹는다
@@ -132,7 +144,9 @@ def target_tickers() -> list:
 
 def display_labels() -> dict:
     """티커 → 리포트에 찍을 이름. 보유 미국주는 티커 그대로가 제일 읽기 좋다."""
-    return load_watchlist()
+    kr = {v.get("yf_ticker") or code + ".KS": v.get("name", code)
+          for code, v in _load_external().items() if v.get("market_country") == "KR"}
+    return {**kr, **load_watchlist()}
 
 
 def is_kr(ticker: str) -> bool:

@@ -173,6 +173,15 @@ def main() -> int:
 
     old = load_raw_portfolio()
     new_port, report = build_sync(old, toss_holdings, usd_cash)
+    # 국내 보유의 yfinance 티커(.KS/.KQ) — news_brief가 보유 종목 뉴스·등락률을 자동으로 잡는다
+    for sym, v in report["external"].items():
+        if v.get("market_country") != "KR":
+            continue
+        try:
+            market = (client.get_stocks(sym).get("result") or [{}])[0].get("market")
+        except (TossAPIError, IndexError):
+            market = None
+        v["yf_ticker"] = sym + (".KQ" if market == "KOSDAQ" else ".KS")
 
     msg = format_report(report, applied=args.apply)
     print(msg)
