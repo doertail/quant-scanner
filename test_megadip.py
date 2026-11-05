@@ -51,3 +51,10 @@ def test_action_lines_only_when_something_to_do():
                            held={"GOOGL": {}})
     assert lines[0].startswith("MSFT 메가딥 반등 완료")
     assert lines[1] == "메가딥 진입 후보: META(RSI 25)"
+
+
+def test_drop_lines_only_company_specific_drops():
+    rets = {"META": -0.08, "AAPL": -0.05, "NVDA": -0.06, "MSFT": 0.01}
+    lines = m.drop_lines(rets, -0.015, held={"NVDA": {}})
+    assert len(lines) == 1 and lines[0].startswith("META 하루 -8.0%")   # AAPL은 QQQ 대비 −3.5%p뿐
+    assert m.drop_lines(rets, None) == []

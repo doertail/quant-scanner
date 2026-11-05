@@ -209,6 +209,8 @@ def main():
         import megadip
         mpos = json.loads(megadip.POSITIONS.read_text(encoding="utf-8")) if megadip.POSITIONS.exists() else {}
         megadip_lines = megadip.action_lines(mpos, megadip.fetch_rsi(megadip.MEGA), held=holdings)
+        rets = megadip.fetch_rets(megadip.MEGA)
+        megadip_lines += megadip.drop_lines(rets, rets.pop("QQQ", None), held=holdings)
     except Exception as e:
         print(f"(메가캡 섹션 생략: {e})", file=sys.stderr)
 

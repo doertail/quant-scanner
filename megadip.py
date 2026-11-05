@@ -31,6 +31,9 @@ POSITIONS = BASE_DIR / "megadip.json"   # 관리 중인 딥 포지션 {ticker:{e
 
 MEGA = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "ORCL", "CRM", "ADBE", "NFLX", "AMD"]
 RSI_IN, RSI_OUT, MAX_HOLD = 30, 50, 120
+# 하루 급락 (BACKTESTS §15): 그 종목만 빠진 날. 미국 대형주에서만 약간 유리, 한국은 불리.
+DROP, REL = -0.05, -0.04
+DROP_RULE = "5% 이하·물타기 금지·이유 한 줄"
 
 
 def classify(rsi, managed: bool, days_held: int | None = None):
@@ -57,6 +60,25 @@ def _days_since(d: str | None) -> int | None:
         return int(np.busday_count(date.fromisoformat(d), date.today()))
     except ValueError:
         return None
+
+
+def drop_lines(rets: dict, qqq_ret: float | None, held=()) -> list:
+    """어제 하루 급락한 대형주 (순수). rets = {ticker: 일간수익}."""
+    if qqq_ret is None:
+        return []
+    return [f"{t} 하루 {r:+.1%} (QQQ보다 {r - qqq_ret:+.1%}p) — 급락 매수 후보: {DROP_RULE}"
+            for t, r in rets.items()
+            if t not in held and r is not None and r <= DROP and r - qqq_ret <= REL]
+
+
+def fetch_rets(tickers):
+    """마지막 거래일 일간수익 {ticker: ret} + QQQ. 실패하면 빈 dict."""
+    try:
+        c = yf.download(list(tickers) + ["QQQ"], period="5d", progress=False, auto_adjust=True)["Close"]
+        r = c.pct_change().iloc[-1]
+        return {t: (None if np.isnan(r[t]) else float(r[t])) for t in c.columns}
+    except Exception:
+        return {}
 
 
 def fetch_rsi(tickers):
