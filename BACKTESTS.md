@@ -699,3 +699,28 @@ and loses in most other starts. Insurance with a steep premium for a contributor
 
 For complete reproducibility, every script is self-contained and prints its own
 config block.
+
+---
+
+## 15. Buying a Large Cap After a One-Day Company-Specific Drop (`backtest_event_dip.py`)
+
+Run 2026-11-05. 2010-01 to 2026-11. Event: daily return ≤ −5% **and** ≥4%p worse than QQQ
+(company news, not a market selloff); one event per ticker per 20 days. Buy at the next
+day's close, hold N trading days, compare with buying QQQ the same day. Control = the same
+tickers bought on arbitrary days (every 20 days).
+
+| Group | Events | 1-year excess vs QQQ, median (win rate) | Control (any day) | Dip adds |
+|---|---:|---:|---:|---:|
+| Today's giants (AAPL, MSFT, GOOGL, NVDA… 18) | 439 | +9.3% (61%) | +3.6% | ≈ +6%p |
+| Giants of 2010 that lagged (INTC, IBM, BA, PYPL, DIS… 19) | 344 | −6.8% (43%) | −8.0% | ≈ +1%p |
+| Both | 783 | +2.2% (53%) | — | — |
+| Only drops ≤ −10% | 131 | +1.3% (52%) | — | — |
+
+Worst single cases: −70% to −100% relative to QQQ over a year.
+
+**Reading.** Buying on the dip is slightly better than buying the same company on a random
+day (+1 to +6%p), so the dip itself is not a mistake. But whether it beats QQQ is decided by
+**which company** — today's winners vs yesterday's giants differ by ~16%p a year, and you
+cannot tell in advance which group a company belongs to. Combined, it is a coin flip
+(53%) with fat left tails. Bigger drops (≤ −10%) are no better. Treat it as a small,
+capped satellite (≤5% of the account per name, no averaging down), not as a return engine.
