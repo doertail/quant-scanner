@@ -724,3 +724,11 @@ day (+1 to +6%p), so the dip itself is not a mistake. But whether it beats QQQ i
 cannot tell in advance which group a company belongs to. Combined, it is a coin flip
 (53%) with fat left tails. Bigger drops (≤ −10%) are no better. Treat it as a small,
 capped satellite (≤5% of the account per name, no averaging down), not as a return engine.
+
+**KOSPI (`--kr`, benchmark KODEX 200 069500.KS, same rules).** Today's large caps (삼성전자,
+SK하이닉스, 현대차, KB금융… 14): 1-year median **+3.7%** (55%) vs control +0.5% → dip adds ≈ +3%p.
+Large caps of the 2010s that lagged (카카오, LG화학, 삼성SDI, 한국전력, 엔씨소프트, 아모레… 16):
+**−9.3%** (39%) vs control −7.2% → dip makes it ≈ 2%p **worse** (falling knives keep falling).
+Combined 922 events: **−4.0%** median, 46% win; drops ≤ −10%: −6.0%, 46%. Worse than the US:
+in Korea a company-specific drop more often marks the start of a long decline. Prefer the
+KOSPI 200 ETF over dip-buying single Korean names.

@@ -10,7 +10,7 @@ backtest_event_dip.py — 대형주가 '단기 이슈'로 하루 급락했을 �
 ⚠️ 생존편향: 'TODAY' = 지금 거인이 된 회사들. 과거엔 몰랐다. 그래서 2010년쯤 거인이었지만
 이후 부진한 회사('FALLEN')를 따로 돌려 비교한다 — 실제 기대치는 두 그룹 사이 어딘가.
 
-사용: python backtest/backtest_event_dip.py
+사용: python backtest/backtest_event_dip.py [--kr]
 """
 
 import numpy as np
@@ -24,6 +24,14 @@ FALLEN = ["INTC", "IBM", "CSCO", "PYPL", "BA", "DIS", "NKE", "GE", "T", "VZ", "X
 DROP, REL, GAP = -0.05, -0.04, 20
 HORIZONS = (20, 60, 120, 250)
 START = "2010-01-01"
+# 코스피: 기준선 = KODEX 200(배당 포함). 지금 대형주 vs 2010년대 대형주였다가 부진한 곳
+KR_TODAY = ["005930.KS", "000660.KS", "207940.KS", "005380.KS", "000270.KS", "105560.KS",
+            "055550.KS", "086790.KS", "068270.KS", "012450.KS", "034020.KS", "035420.KS",
+            "032830.KS", "009540.KS"]
+KR_FALLEN = ["035720.KS", "051910.KS", "006400.KS", "017670.KS", "015760.KS", "005490.KS",
+             "096770.KS", "066570.KS", "030200.KS", "010950.KS", "011170.KS", "036570.KS",
+             "251270.KS", "090430.KS", "097950.KS", "018260.KS"]
+KR_BENCH = "069500.KS"
 
 
 def find_events(ret: pd.Series, qret: pd.Series, drop=DROP, rel=REL, gap=GAP) -> list:
@@ -40,13 +48,13 @@ def find_events(ret: pd.Series, qret: pd.Series, drop=DROP, rel=REL, gap=GAP) ->
 def forward_excess(px: pd.Series, qpx: pd.Series, i: int, h: int) -> float | None:
     """이벤트 다음 날 종가에 사서 h거래일 보유 — 종목 수익 − QQQ 수익 (순수)."""
     b, e = i + 1, i + 1 + h
-    if e >= len(px) or np.isnan(px.iloc[b]) or np.isnan(px.iloc[e]):
+    if e >= len(px) or np.isnan([px.iloc[b], px.iloc[e], qpx.iloc[b], qpx.iloc[e]]).any():
         return None
     return (px.iloc[e] / px.iloc[b]) - (qpx.iloc[e] / qpx.iloc[b])
 
 
-def run(group: list, close: pd.DataFrame) -> pd.DataFrame:
-    q = close["QQQ"]
+def run(group: list, close: pd.DataFrame, bench: str = "QQQ") -> pd.DataFrame:
+    q = close[bench]
     qret = q.pct_change()
     rows = []
     for t in group:
@@ -59,9 +67,9 @@ def run(group: list, close: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def baseline(group: list, close: pd.DataFrame, h: int) -> float:
+def baseline(group: list, close: pd.DataFrame, h: int, bench: str = "QQQ") -> float:
     """대조군: 같은 종목을 아무 날(20일 간격)에나 샀을 때 h일 초과수익 중앙값."""
-    q, xs = close["QQQ"], []
+    q, xs = close[bench], []
     for t in group:
         px = close[t]
         xs += [x for i in range(0, len(px), GAP) if (x := forward_excess(px, q, i, h)) is not None]
@@ -72,7 +80,7 @@ def summary(df: pd.DataFrame) -> str:
     L = [f"  이벤트 {len(df)}건 ({df['ticker'].nunique()}종목)"]
     for h in HORIZONS:
         x = df[h].dropna()
-        L.append(f"  {h:>3}일 후 QQQ 대비: 중앙값 {x.median():+.1%} · 평균 {x.mean():+.1%} · "
+        L.append(f"  {h:>3}일 후 기준 대비: 중앙값 {x.median():+.1%} · 평균 {x.mean():+.1%} · "
                  f"이긴 비율 {(x > 0).mean():.0%} · 최악 {x.min():+.0%} (n={len(x)})")
     return "\n".join(L)
 
@@ -89,22 +97,25 @@ def _check():
 
 
 def main():
+    import sys
     _check()
-    tickers = sorted(set(TODAY + FALLEN + ["QQQ"]))
-    raw = yf.download(tickers, start=START, auto_adjust=True, progress=False)["Close"]
-    print(f"기간 {raw.index[0].date()} ~ {raw.index[-1].date()} · 조건: 하루 ≤{DROP:.0%} & QQQ보다 ≤{REL:.0%}"
-          f" · 다음 날 종가 매수\n")
-    for name, g in (("지금 거인 (생존편향 有)", TODAY), ("한때 거인, 이후 부진", FALLEN)):
+    kr = "--kr" in sys.argv
+    today, fallen, bench = (KR_TODAY, KR_FALLEN, KR_BENCH) if kr else (TODAY, FALLEN, "QQQ")
+    raw = yf.download(sorted(set(today + fallen + [bench])), start=START, auto_adjust=True,
+                      progress=False)["Close"]
+    print(f"기간 {raw.index[0].date()} ~ {raw.index[-1].date()} · 기준 {bench} · 조건: 하루 ≤{DROP:.0%}"
+          f" & 기준보다 ≤{REL:.0%} · 다음 날 종가 매수\n")
+    for name, g in (("지금 대형주 (생존편향 有)", today), ("한때 대형주, 이후 부진", fallen)):
         print(f"■ {name}")
-        print(summary(run(g, raw)))
-        print("  대조군(아무 날 매수): " + " · ".join(f"{h}일 {baseline(g, raw, h):+.1%}" for h in HORIZONS))
+        print(summary(run(g, raw, bench)))
+        print("  대조군(아무 날 매수): " + " · ".join(f"{h}일 {baseline(g, raw, h, bench):+.1%}"
+                                              for h in HORIZONS))
         print()
-    allg = run(TODAY + FALLEN, raw)
+    allg = run(today + fallen, raw, bench)
     print("■ 둘 합침")
     print(summary(allg))
-    big = allg[allg["drop"] <= -0.10]
     print("\n■ 하루 −10% 이상 급락만")
-    print(summary(big))
+    print(summary(allg[allg["drop"] <= -0.10]))
 
 
 if __name__ == "__main__":
